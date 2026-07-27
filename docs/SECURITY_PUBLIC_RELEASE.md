@@ -17,6 +17,8 @@ Do not publish:
 - generated datasets
 - model weights
 - runtime memory or notes
+- `vm/llm-ui/.env`
+- Home Assistant webhook secrets
 - temporary screenshots or diagnostics
 
 Safe public files include:

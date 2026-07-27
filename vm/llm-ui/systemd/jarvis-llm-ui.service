@@ -1,0 +1,17 @@
+[Unit]
+Description=Jarvis LLM UI and Home Assistant webhook
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jarvis/vm/llm-ui
+EnvironmentFile=/opt/jarvis/vm/llm-ui/.env
+ExecStart=/usr/bin/node /opt/jarvis/vm/llm-ui/server.js
+Restart=on-failure
+RestartSec=5
+User=jarvis
+Group=jarvis
+
+[Install]
+WantedBy=multi-user.target

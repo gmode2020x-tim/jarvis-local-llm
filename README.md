@@ -5,6 +5,7 @@ Jarvis is a self-hosted assistant package for a local workstation plus an option
 - a deterministic offline backend for install verification
 - an OpenAI-compatible local LLM backend, tested with Ollama
 - a browser console for chat, model discovery, and LLM host inspection
+- a VM-side Jarvis LLM UI/API service for Ollama, dashboard status, Home Assistant webhooks, prompt review, and benchmark checks
 - local memory and notes
 - helper tools for project status, host checks, model checks, and Home Assistant voice experiments
 - voice dataset preparation utilities for custom TTS work
@@ -18,7 +19,7 @@ Use only voices, recordings, and automation targets that you own or have permiss
 Windows PowerShell:
 
 ```powershell
-git clone https://github.com/YOUR-USER/jarvis-local-llm.git
+git clone https://github.com/gmode2020x-tim/jarvis-local-llm.git
 cd jarvis-local-llm
 Copy-Item .env.example .env
 .\scripts\install_prereqs.ps1
@@ -43,10 +44,10 @@ Open `http://127.0.0.1:8765`.
 
 ## Add A Local LLM
 
-On a Linux machine or VM that will host Ollama:
+On a Linux machine or VM that will host Ollama and the Jarvis VM UI:
 
 ```bash
-sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_ollama_linux.sh
+sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_jarvis_vm.sh
 ```
 
 Then set `.env` on the workstation:
@@ -70,11 +71,18 @@ Start chat:
 .\.venv\Scripts\python.exe .\scripts\run_assistant.py
 ```
 
+Open the VM dashboard:
+
+```text
+http://YOUR-LLM-HOST:8787
+```
+
 ## Documentation
 
 - [Quickstart](docs/QUICKSTART.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [LLM server setup](docs/LLM_SERVER_SETUP.md)
+- [VM UI/API package](vm/llm-ui/README.md)
 - [Tuning guide](docs/TUNING.md)
 - [Home Assistant integration](docs/HOME_ASSISTANT.md)
 - [Wake word setup](docs/JARVIS_WAKE_WORD.md)
@@ -90,7 +98,9 @@ Start chat:
 - `scripts/inspect_llm_vm.py` - ping, port, HTTP model, and optional SSH inspection.
 - `scripts/prepare_dataset.py` - converts source audio to clean LJSpeech-style clips.
 - `scripts/check_dataset.py` - validates generated voice datasets.
+- `scripts/setup_jarvis_vm.sh` - installs Node, Ollama, models, and the VM-side Jarvis UI service.
 - `scripts/setup_ollama_linux.sh` - installs and exposes Ollama on a Linux LLM host.
+- `vm/llm-ui/` - deployable VM-side dashboard, API, Home Assistant webhook, Docker Compose, and systemd unit.
 
 ## Public Safety
 

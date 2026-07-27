@@ -1,12 +1,11 @@
 rest_command:
   jarvis_assist:
-    url: "http://YOUR-LLM-HOST:8787/api/assist"
+    url: "http://YOUR-LLM-HOST:8787/api/home-assistant/webhook/YOUR_SECRET"
     method: post
     content_type: "application/json"
-    headers:
-      Authorization: "Bearer !secret jarvis_assist_token"
     payload: >
       {
         "source": "assist",
-        "text": "{{ text }}"
+        "text": "{{ text }}",
+        "speak": true
       }

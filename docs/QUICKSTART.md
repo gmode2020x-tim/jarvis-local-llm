@@ -33,12 +33,12 @@ $env:JARVIS_BACKEND = "local"
 
 Open `http://127.0.0.1:8765`.
 
-## 4. Connect Ollama
+## 4. Install The VM Stack
 
-Install Ollama on a Linux host:
+On the Linux VM that will host Ollama and the Jarvis VM UI:
 
 ```bash
-sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_ollama_linux.sh
+sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_jarvis_vm.sh
 ```
 
 Update `.env`:
@@ -54,4 +54,17 @@ Verify:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\inspect_llm_vm.py
+```
+
+Open the VM UI:
+
+```text
+http://YOUR-LLM-HOST:8787
+```
+
+Run the VM UI smoke test on the VM:
+
+```bash
+cd /opt/jarvis/vm/llm-ui
+npm run smoke
 ```

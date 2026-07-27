@@ -1,21 +1,35 @@
 # LLM Server Setup
 
-Jarvis expects an OpenAI-compatible chat-completions API. Ollama is the default supported path because it exposes `http://HOST:11434/v1/chat/completions`.
+Jarvis has two VM-side pieces:
 
-## Linux Ollama Host
+- Ollama on port `11434`, used by the workstation backend and the VM UI.
+- Jarvis LLM UI/API on port `8787`, used for dashboards, Home Assistant webhooks, benchmarks, and VM-side chat.
 
-Copy this repo to the Linux host or copy only `scripts/setup_ollama_linux.sh`, then run:
+## Full Linux VM Install
+
+Clone this repository on the VM, then run:
 
 ```bash
-sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_ollama_linux.sh
+sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_jarvis_vm.sh
 ```
 
 The script:
 
+- installs Node 22 when Node 20+ is missing
 - installs Ollama if missing
 - configures `OLLAMA_HOST=0.0.0.0:11434`
 - sets `OLLAMA_KEEP_ALIVE=30m`
-- enables and restarts the service
+- pulls the selected model
+- copies the repo to `/opt/jarvis`
+- creates `/opt/jarvis/vm/llm-ui/.env` if missing
+- installs and starts `jarvis-llm-ui.service`
+- exposes the dashboard/API on port `8787`
+
+For an Ollama-only host without the Jarvis UI:
+
+```bash
+sudo JARVIS_MODEL=llama3.2:3b bash scripts/setup_ollama_linux.sh
+```
 - pulls the selected model
 
 ## Workstation Configuration
@@ -27,6 +41,28 @@ JARVIS_BACKEND=llm_vm
 JARVIS_LLM_VM_HOST=YOUR-LLM-HOST
 JARVIS_LLM_VM_BASE_URL=http://YOUR-LLM-HOST:11434/v1
 JARVIS_MODEL=llama3.2:3b
+```
+
+## VM UI Configuration
+
+On the VM:
+
+```bash
+sudo nano /opt/jarvis/vm/llm-ui/.env
+sudo systemctl restart jarvis-llm-ui
+```
+
+Useful values:
+
+```dotenv
+PORT=8787
+OLLAMA_HOST=http://127.0.0.1:11434
+DEFAULT_MODEL=llama3.2:3b
+VOICE_MODEL=llama3.2:3b
+DEEP_MODEL=llama3.1:8b
+HOME_ASSISTANT_URL=http://homeassistant.local:8123
+HOME_ASSISTANT_TOKEN=
+HOME_ASSISTANT_WEBHOOK_SECRET=change-this-long-random-secret
 ```
 
 ## Smoke Tests
@@ -41,6 +77,8 @@ Direct API check:
 
 ```powershell
 Invoke-RestMethod http://YOUR-LLM-HOST:11434/v1/models
+Invoke-RestMethod http://YOUR-LLM-HOST:8787/api/health
+Invoke-RestMethod http://YOUR-LLM-HOST:8787/api/models
 ```
 
 Terminal chat:
@@ -58,3 +96,5 @@ sudo ufw allow from YOUR-LAN-CIDR to any port 11434 proto tcp
 ```
 
 Avoid exposing port `11434` directly to the public internet.
+
+Also keep port `8787` LAN-only unless you put it behind authentication and TLS.

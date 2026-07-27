@@ -1,0 +1,13 @@
+services:
+  jarvis-llm-ui:
+    build: .
+    container_name: jarvis-llm-ui
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

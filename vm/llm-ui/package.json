@@ -1,0 +1,14 @@
+{
+  "name": "jarvis-llm-ui",
+  "version": "1.0.0",
+  "description": "Jarvis VM-side Ollama dashboard, chat API, and Home Assistant webhook service.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
