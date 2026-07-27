@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .agents/
+.tools/
 .codex-remote-attachments/
 .tmp*/
 .tmp_*
