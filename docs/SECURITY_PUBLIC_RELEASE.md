@@ -26,3 +26,9 @@ Safe public files include:
 - `.env.example`
 - documentation with placeholder hostnames
 - examples that use placeholder tokens
+
+After the check passes, publish with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_github.ps1 -RepoName jarvis-local-llm -Visibility public
+```

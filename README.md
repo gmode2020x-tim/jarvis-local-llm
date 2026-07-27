@@ -102,3 +102,9 @@ Before publishing:
 powershell -ExecutionPolicy Bypass -File .\scripts\check_public_release.ps1
 git status --short
 ```
+
+Publish with GitHub CLI after authentication:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_github.ps1 -RepoName jarvis-local-llm -Visibility public
+```
