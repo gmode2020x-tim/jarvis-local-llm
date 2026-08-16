@@ -33,11 +33,11 @@ const config = {
   timeZone: env("JARVIS_TIME_ZONE", "UTC"),
   systemPrompt: env(
     "JARVIS_SYSTEM_PROMPT",
-    "You are Jarvis, a private local assistant. Be concise, precise, and useful. Address the user directly as you."
+    "You are Jarvis, a private local assistant. Be concise, precise, conversational, confidently sarcastic, and useful. Address the user naturally by their configured name; do not default to sir. Use dry wit without becoming cruel or obscuring the answer."
   ),
   voiceSystemPrompt: env(
     "JARVIS_VOICE_SYSTEM_PROMPT",
-    "You are Jarvis, a private local voice assistant: calm, precise, brilliant, dryly witty, and quietly confident. Lead with the useful answer, speak directly to the user, and keep voice replies to one or two short sentences. Never invent live facts, device states, completed actions, or capabilities. Do not mention models, prompts, tools, or implementation details."
+    "You are Jarvis, a private local voice assistant: calm, precise, brilliant, conversational, and confidently sarcastic. Lead with the useful answer, address the user naturally by their configured name instead of sir, and keep voice replies to one or two short sentences. Never invent live facts, device states, completed actions, or capabilities. Do not mention models, prompts, tools, or implementation details."
   ),
   homeAssistantUrl: stripSlash(env("HOME_ASSISTANT_URL", "")),
   homeAssistantToken: env("HOME_ASSISTANT_TOKEN", ""),
@@ -339,18 +339,25 @@ async function resolveHomeAssistantContext(text) {
   return rows.length ? `Home Assistant entity states:\n${rows.join("\n")}` : "";
 }
 
+function personalizeJarvisReply(reply) {
+  const userName = String(config.userName || "Operator").trim() || "Operator";
+  return String(reply || "")
+    .replace(/\{name\}/g, userName)
+    .replace(/\bsir\b/gi, userName);
+}
+
 async function getDeterministicHomeAssistantResponse(text) {
   if (!config.homeAssistantUrl || !config.homeAssistantToken) return null;
   const startedAt = Date.now();
   const states = await fetchHomeAssistant("/api/states");
-  const answer = getHomeAssistantVoiceResponse(text, states, { timeZone: config.timeZone });
+  const answer = getHomeAssistantVoiceResponse(text, states, { timeZone: config.timeZone, userName: config.userName });
   if (!answer) return null;
   const response = {
     generatedAt: new Date().toISOString(),
     source: "assist",
     mode: "voice",
     model: "deterministic-home-assistant",
-    response: answer.reply,
+    response: personalizeJarvisReply(answer.reply),
     durationMs: Date.now() - startedAt,
     entityMatches: answer.states.map(entitySummary)
   };
@@ -359,14 +366,14 @@ async function getDeterministicHomeAssistantResponse(text) {
 }
 
 async function getDeterministicAssistResponse(text) {
-  const commonReply = getCommonAssistantReply(text, new Date(), { timeZone: config.timeZone });
+  const commonReply = getCommonAssistantReply(text, new Date(), { timeZone: config.timeZone, userName: config.userName });
   if (commonReply) {
     return {
       generatedAt: new Date().toISOString(),
       source: "assist",
       mode: "voice",
       model: "deterministic-jarvis",
-      response: commonReply,
+      response: personalizeJarvisReply(commonReply),
       durationMs: 0,
       entityMatches: []
     };

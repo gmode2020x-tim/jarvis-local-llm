@@ -95,7 +95,7 @@ npm run verify:language
 npm run smoke
 ```
 
-`verify:language` checks common Jarvis replies, natural entity aliases, directional device names, aggregate home questions, unavailable states, read-only control handling, and persona guardrails without requiring Home Assistant or Ollama.
+`verify:language` checks configured-name address, removal of formal `sir` defaults, common Jarvis replies, natural entity aliases, directional device names, aggregate home questions, unavailable states, read-only control handling, and persona guardrails without requiring Home Assistant or Ollama.
 
 In the dashboard, open **Home Assistant** and use **Refresh audit** to compare the current inventory against explicit-ID, friendly-name, and object-ID phrase resolution. The full live inventory audit may take several seconds and reports progress without blocking the other dashboard views.
 

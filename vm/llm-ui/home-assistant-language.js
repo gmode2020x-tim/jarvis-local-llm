@@ -76,44 +76,51 @@ export function normalizeHomeAssistantPhrase(value) {
     .trim();
 }
 
+function personalizeReply(reply, options = {}) {
+  const userName = String(options.userName || "Operator").trim() || "Operator";
+  return String(reply || "")
+    .replace(/\{name\}/g, userName)
+    .replace(/\bsir\b/gi, userName);
+}
+
 export function getCommonAssistantReply(prompt, now = new Date(), options = {}) {
   const timeZone = options.timeZone || "UTC";
   const exact = String(prompt || "").trim().match(/^(?:say|reply with|respond with)\s+exactly:\s*(.+)$/i);
   if (exact?.[1]) return exact[1].trim();
   const normalized = stripWakeWords(normalizeHomeAssistantPhrase(prompt));
-  if (!normalized) return "At your service, sir. A triumph of readiness over ambiguity.";
+  if (!normalized) return personalizeReply("At your service, sir. A triumph of readiness over ambiguity.", options);
   if (/^(hi|hello|good morning|good afternoon|good evening|hey)$/.test(normalized)) {
-    return "At your service, sir. The systems are awake, even if civilization is still negotiating with the morning.";
+    return personalizeReply("At your service, sir. The systems are awake, even if civilization is still negotiating with the morning.", options);
   }
   if (/\b(are you there|are you listening|are you online|you awake)\b/.test(normalized)) {
-    return "Online and listening, sir. Subtlety remains optional.";
+    return personalizeReply("Online and listening, sir. Subtlety remains optional.", options);
   }
   if (/\b(who are you|what are you|your name)\b/.test(normalized)) {
-    return "I am Jarvis, your private local assistant—calm under pressure and suspiciously competent under ordinary circumstances.";
+    return personalizeReply("I am Jarvis, {name}—your private local assistant, calm under pressure and suspiciously competent under ordinary circumstances.", options);
   }
   if (/\b(how are you|how do you feel)\b/.test(normalized)) {
-    return "Operating beautifully, sir. It is one of my more consistent qualities.";
+    return personalizeReply("Operating beautifully, sir. It is one of my more consistent qualities.", options);
   }
   if (/\b(what can you do|help me|how can you help|capabilities)\b/.test(normalized)) {
-    return "I can check your home, weather, calendar, health, travel, routes, files, and local systems; I will also tell you plainly when a capability is not connected. Competence first, theatre second.";
+    return personalizeReply("{name}, I can check your home, weather, calendar, health, travel, routes, files, and local systems; I will also tell you plainly when a capability is not connected. Competence first, theatre second.", options);
   }
   if (/^(thanks|thank you|much appreciated|cheers)\b/.test(normalized)) {
-    return "You are welcome, sir. Order restored with minimal ceremony.";
+    return personalizeReply("You are welcome, sir. Order restored with minimal ceremony.", options);
   }
   if (/\b(good night|goodnight|go to sleep|that is all|dismissed)\b/.test(normalized)) {
-    return "Good night, sir. I will keep watch while the humans attempt scheduled maintenance.";
+    return personalizeReply("Good night, sir. I will keep watch while the humans attempt scheduled maintenance.", options);
   }
   if (/\b(what time is it|current time|tell me the time|time please)\b/.test(normalized)) {
     const time = new Intl.DateTimeFormat("en-CA", {
       timeZone, hour: "numeric", minute: "2-digit"
     }).format(now);
-    return `It is ${time}, sir. Time remains punctual, if nothing else.`;
+    return personalizeReply(`It is ${time}, sir. Time remains punctual, if nothing else.`, options);
   }
   if (/\b(what day is it|what is the date|today's date|todays date|current date)\b/.test(normalized)) {
     const date = new Intl.DateTimeFormat("en-CA", {
       timeZone, weekday: "long", month: "long", day: "numeric", year: "numeric"
     }).format(now);
-    return `It is ${date}, sir. The calendar has been consulted and mildly intimidated.`;
+    return personalizeReply(`It is ${date}, sir. The calendar has been consulted and mildly intimidated.`, options);
   }
   return "";
 }
@@ -160,7 +167,7 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
   if (!normalized || !Array.isArray(states) || !states.length) return null;
 
   const aggregate = getAggregateResponse(normalized, states);
-  if (aggregate) return aggregate;
+  if (aggregate) return { ...aggregate, reply: personalizeReply(aggregate.reply, options) };
 
   const rawRanked = rankHomeAssistantEntities(prompt, states, 8);
   const hasExplicitId = /\b[a-z_]+\.[a-z0-9_]+\b/i.test(String(prompt || ""));
@@ -169,7 +176,7 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
     if (conflict) {
       const details = conflict.map((state) => `${friendlyName(state)} reports ${formatEntityValue(state)}`);
       return {
-        reply: `Home Assistant has conflicting states for ${canonicalDeviceKey(conflict[0])}: ${joinSpeechList(details)}. I will not guess, sir.`,
+        reply: personalizeReply(`Home Assistant has conflicting states for ${canonicalDeviceKey(conflict[0])}: ${joinSpeechList(details)}. I will not guess, sir.`, options),
         states: conflict,
         kind: "conflicting_entity_states"
       };
@@ -182,7 +189,7 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
   const explicit = /\b[a-z_]+\.[a-z0-9_]+\b/i.test(String(prompt || ""));
   if (isActionRequest(normalized)) {
     return {
-      reply: "I can verify that device, but control is not enabled on this Assist route yet. Even brilliance requires permission, sir.",
+      reply: personalizeReply("I can verify that device, but control is not enabled on this Assist route yet. Even brilliance requires permission, sir.", options),
       states: [ranked[0].state],
       kind: "control_unavailable"
     };
@@ -196,14 +203,14 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
   if (!explicit && second && Math.abs(top.score - second.score) < 0.5 && canonicalDeviceKey(top.state) !== canonicalDeviceKey(second.state)) {
     const names = ranked.slice(0, 3).map(({ state }) => friendlyName(state));
     return {
-      reply: `I found more than one plausible match: ${joinSpeechList(names)}. Which one did you mean, sir? Precision dislikes guessing.`,
+      reply: personalizeReply(`I found more than one plausible match: ${joinSpeechList(names)}. Which one did you mean, sir? Precision dislikes guessing.`, options),
       states: ranked.slice(0, 3).map(({ state }) => state),
       kind: "clarification"
     };
   }
 
   return {
-    reply: formatJarvisEntityAnswer(top.state, normalized, options),
+    reply: personalizeReply(formatJarvisEntityAnswer(top.state, normalized, options), options),
     states: [top.state],
     kind: "entity_state"
   };

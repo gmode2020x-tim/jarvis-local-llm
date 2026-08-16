@@ -25,6 +25,7 @@ def main() -> None:
         "Ping localhost",
         "Check LLM VM model status",
         "What are my plans tomorrow?",
+        "How are you, Jarvis?",
     ]
 
     for check in checks:
@@ -36,7 +37,13 @@ def main() -> None:
     data = memory.load()
     assert data.get("recent_turns"), "memory did not record turns"
     assert data.get("facts", {}).get("offline_test"), "memory fact was not stored"
-    assert "Calendar access is not connected" in brain.respond("What are my plans tomorrow?")
+    calendar_reply = brain.respond("What are my plans tomorrow?")
+    personality_reply = brain.respond("How are you, Jarvis?")
+    assert "calendar access isn't connected" in calendar_reply.lower()
+    assert config.user_name in calendar_reply
+    assert config.user_name in personality_reply
+    assert "Apparently one of us should be" in personality_reply
+    assert "sir" not in personality_reply.lower()
     print("jarvis verification passed")
 
 

@@ -8,7 +8,7 @@ Jarvis reads environment variables from the shell and then from a local `.env` f
 | --- | --- | --- |
 | `JARVIS_BACKEND` | `llm_vm` | Supported values: `local`, `llm_vm`, `llm-vm`, `vm`. |
 | `JARVIS_MODEL` | `llama3.2:3b` | Model name sent to the LLM server. |
-| `JARVIS_USER_NAME` | `Operator` | Name Jarvis may use when clarity helps. Jarvis should still speak directly as `you`. |
+| `JARVIS_USER_NAME` | `Operator` | Name Jarvis uses for natural direct address. Set this to the household user's preferred name; Jarvis speaks as `you` and does not default to formal titles such as `sir`. |
 | `JARVIS_TIME_ZONE` | `UTC` | IANA time zone for local status and memory timestamps, for example `America/Toronto`. |
 
 Use `local` for deterministic installation checks. Use `llm_vm` for live model chat.

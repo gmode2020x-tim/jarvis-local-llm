@@ -1,6 +1,6 @@
 # Jarvis Home Assistant Phrase Coverage
 
-Jarvis accepts ordinary Home Assistant questions without requiring people to know entity IDs. Every response follows the same character contract: concise, precise, confident, lightly dry, and grounded in current data. Jarvis says when data is missing, ambiguous, conflicting, or outside the authorized read-only route.
+Jarvis accepts ordinary Home Assistant questions without requiring people to know entity IDs. Every response follows the same character contract: concise, precise, conversational, confidently sarcastic, addressed naturally by the configured user name, and grounded in current data. Jarvis says when data is missing, ambiguous, conflicting, or outside the authorized read-only route.
 
 ## Common Question Families
 
@@ -18,10 +18,16 @@ Jarvis accepts ordinary Home Assistant questions without requiring people to kno
 | Weather | `What is the weather at home?`, `Will it rain today?` | Use the current Home Assistant weather entity and available forecast attributes. |
 | Calendar | `What is next on my calendar?`, `Do I have anything today?` | Use current calendar state and event attributes. |
 | History | `What happened in the last 48 hours?`, `Was the garage opened today?` | Use Home Assistant history for the requested entity and time range. |
-| General assistance | `What time is it?`, `What can you do?`, `How are you?` | Use deterministic Jarvis replies for speed and consistent personality. |
+| General assistance | `Jarvis`, `Who are you?`, `What time is it?`, `Thank you`, `Good night`, `How are you?` | Use rotated deterministic Jarvis replies for speed, direct name use, and consistent personality. |
 | Control request | `Turn on the kitchen lights.` | State that control is not enabled unless a separate authorized control workflow exists. |
 
 Natural variants such as `forty eight hours`, `48 hours`, and `48 hrs` should resolve to the same history request. Polite prefixes, contractions, and common question forms are normalized before matching.
+
+## Quick Response Rotation
+
+Quick replies are grouped by intent so a greeting cannot accidentally produce a calendar or status answer. Each delivered reply records only its category key, variant key, and timestamp. For the next seven days, that key is excluded while unused replies remain in the category; if a category is exhausted, Jarvis reuses the least-recently heard variant. The history survives an LLM UI restart and contains no transcript, Home Assistant state, or personal message content.
+
+The configured user name is rendered at delivery time. Response templates stay portable, while the active household assistant can address its user naturally without falling back to `sir`.
 
 ## Resolution Order
 
@@ -42,6 +48,8 @@ This separation matters. A 100% explicit-ID audit proves that every entity can b
 - Read-only Assist routes never imply that a requested action succeeded.
 - Model-backed replies use the same Jarvis persona as deterministic replies.
 - Short voice answers lead with the result and avoid generic assistant filler.
+- Direct address uses `JARVIS_USER_NAME`; formal honorifics are not the default.
+- Sarcasm is conversational and noticeable, but never cruel, personal, or allowed to obscure a safety warning or factual state.
 
 ## Dashboard
 

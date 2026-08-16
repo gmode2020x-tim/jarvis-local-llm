@@ -78,7 +78,7 @@ const conflictingDoors = [
 ];
 const conflict = getHomeAssistantVoiceResponse("Is the left garage door open?", conflictingDoors);
 assert.match(conflict.reply, /conflicting states/i);
-assert.match(conflict.reply, /will not guess, sir/i);
+assert.match(conflict.reply, /will not guess, Operator/i);
 
 const duplicateRightDoor = [
   state("cover.garage_door_right", "Garage Door Right", "closed", { device_class: "garage" }),
@@ -98,9 +98,11 @@ assert.equal(getHomeAssistantVoiceResponse("Explain the rings of Saturn", states
 assert.equal(rankHomeAssistantEntities("garage temperature", states, 1)[0].state.entity_id, "sensor.garage_temperature");
 
 for (const prompt of ["Who are you?", "Are you there?", "What can you do?", "Thank you", "What time is it?", "What day is it?"]) {
-  const reply = getCommonAssistantReply(prompt, new Date("2026-08-16T03:30:00Z"));
+  const reply = getCommonAssistantReply(prompt, new Date("2026-08-16T03:30:00Z"), { userName: "Tim" });
   assert(reply, `Missing common reply for: ${prompt}`);
   assert.doesNotMatch(reply, /As an AI|language model|Tim is|Tim's/i);
+  assert.doesNotMatch(reply, /\bsir\b/i);
+  assert.match(reply, /\bTim\b/);
 }
 assert.equal(getCommonAssistantReply("Say exactly: Systems nominal"), "Systems nominal");
 
