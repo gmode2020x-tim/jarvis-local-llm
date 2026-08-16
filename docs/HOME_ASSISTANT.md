@@ -80,6 +80,8 @@ All deterministic and model-backed voice answers use the same Jarvis persona: co
 
 The VM dashboard now has a dedicated **Home Assistant** view showing explicit and natural-language entity coverage, common phrase families, stale-state counts, answer scoring, conflict visibility, and the active Jarvis response contract. See [Jarvis Home Assistant phrase coverage](JARVIS_PHRASE_COVERAGE.md) for the full phrase matrix and interpretation guidance.
 
+When Home Assistant mirrors this data into an LLM Monitor dashboard, keep the fast runtime snapshot separate from the full entity audit. Poll health, models, performance, integrations, and prompt-review data every minute; run the more expensive entity audit on a slower interval and merge its last successful cached result into the runtime snapshot. This prevents an audit timeout from blanking healthy runtime cards with `unknown` values.
+
 Run the offline phrase suite from `vm/llm-ui`:
 
 ```bash

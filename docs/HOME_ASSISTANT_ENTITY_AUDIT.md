@@ -51,4 +51,6 @@ The dedicated **Home Assistant** dashboard view displays three different coverag
 
 The audit can take several seconds because it evaluates the current inventory. The dashboard keeps its other views usable while it runs and labels a manual refresh as `Auditing…` until completion.
 
+For a Home Assistant command-line sensor, do not perform the full audit inside the primary one-minute runtime command. Use a separate, longer-timeout audit sensor on a slower interval, write its last successful compact result to a local cache, and let the fast snapshot read that cache. A slow or failed audit can then become stale without making model, Ollama, latency, and integration status disappear.
+
 See [Jarvis Home Assistant phrase coverage](JARVIS_PHRASE_COVERAGE.md) for supported question families, response rules, and end-to-end verification guidance.
