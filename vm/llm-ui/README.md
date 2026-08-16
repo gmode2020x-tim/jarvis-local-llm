@@ -92,7 +92,7 @@ Example body:
 
 ## Saved Conversations And Analysis
 
-All VM chat, Home Assistant Assist, deterministic, error, and model-backed turns are saved in `DATA_DIR/conversation-archive.jsonl`. Existing prompt-review records are backfilled when the archive is first created. Records are not automatically deleted or shortened, and the dashboard displays the saved record count.
+All VM chat, Home Assistant Assist, deterministic, error, and model-backed turns are saved in `DATA_DIR/conversation-archive.jsonl`. Existing prompt-review records and older Home Assistant text events are reconciled into the archive without duplicates at startup. Records are not automatically deleted or shortened, and the dashboard displays the saved record count.
 
 Use the webhook secret as a bearer token to read the private analysis endpoints:
 

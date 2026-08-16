@@ -68,7 +68,7 @@ JARVIS_CONVERSATION_ARCHIVE_PATH=conversation-archive.jsonl
 
 ## Conversation Archive
 
-The VM service appends every API chat, Home Assistant Assist answer, deterministic response, failed model call, and deep-mode result to `conversation-archive.jsonl` in `DATA_DIR`. Existing `prompt-review.jsonl` history is copied into the archive on the first start after this feature is installed. The file is append-only and has no automatic retention limit.
+The VM service appends every API chat, Home Assistant Assist answer, deterministic response, failed model call, and deep-mode result to `conversation-archive.jsonl` in `DATA_DIR`. Existing prompt-review history and older Home Assistant text events are reconciled into the archive at startup without duplicating records. The file is append-only and has no automatic retention limit.
 
 The dashboard reports the archive record count. Full text and analysis summaries are deliberately protected by the same secret used for the Home Assistant webhook:
 

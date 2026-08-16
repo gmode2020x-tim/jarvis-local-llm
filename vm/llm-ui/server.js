@@ -635,18 +635,67 @@ async function appendPromptReview(value) {
 }
 
 async function ensureConversationArchive() {
-  try {
-    const stat = await fs.stat(conversationArchivePath);
-    if (stat.size > 0) return;
-  } catch {
-    // First run: backfill the existing prompt-review history below.
-  }
-
-  const previous = await readAllJsonl(promptReviewPath);
-  if (!previous.length) return;
-  const records = previous.map((row) => normalizeConversationRecord(row, { source: "legacy_prompt_review" }));
   await fs.mkdir(path.dirname(conversationArchivePath), { recursive: true });
-  await fs.writeFile(conversationArchivePath, `${records.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
+  const existing = await readAllJsonl(conversationArchivePath);
+  const promptHistory = await readAllJsonl(promptReviewPath);
+  const eventHistory = await readAllJsonl(eventLogPath);
+  const existingIds = new Set(existing.map((row) => row.id).filter(Boolean));
+  const missing = [];
+
+  promptHistory.forEach((row, index) => {
+    const record = normalizeConversationRecord({ ...row, id: row.id || `legacy-prompt-review-${index}` }, { source: "legacy_prompt_review" });
+    if (existingIds.has(record.id) || existing.some((item) => sameConversationRecord(item, record))) return;
+    existingIds.add(record.id);
+    missing.push(record);
+  });
+
+  eventHistory.forEach((event, index) => {
+    const prompt = String(event.text || event.payload?.text || event.payload?.message || "").trim();
+    if (!prompt || eventCoveredByPromptHistory(event, promptHistory)) return;
+    const at = String(event.at || event.receivedAt || event.generatedAt || "");
+    const id = `legacy-home-assistant-${at.replace(/[^0-9A-Za-z]/g, "") || "unknown"}-${index}`;
+    if (existingIds.has(id)) return;
+    const record = normalizeConversationRecord({
+      id,
+      at,
+      source: event.source || event.payload?.source || "home_assistant_webhook",
+      mode: event.mode || (event.source === "assist" || event.payload?.source === "assist" ? "voice" : "default"),
+      model: event.model || event.deepModel || "",
+      route: event.route || "legacy_home_assistant_event",
+      durationMs: event.durationMs || event.deepDurationMs || 0,
+      prompt,
+      response: event.response || event.reply || "",
+      error: event.error || null,
+      entityMatches: event.entityMatches || []
+    });
+    record.legacySource = path.basename(eventLogPath);
+    existingIds.add(id);
+    missing.push(record);
+  });
+
+  if (missing.length) {
+    await fs.appendFile(conversationArchivePath, `${missing.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
+  }
+}
+
+function sameConversationRecord(left, right) {
+  return String(left.at || "") === String(right.at || "") &&
+    String(left.source || "") === String(right.source || "") &&
+    String(left.prompt || "") === String(right.prompt || "") &&
+    String(left.reply || "") === String(right.reply || "") &&
+    String(left.route || "") === String(right.route || "");
+}
+
+function eventCoveredByPromptHistory(event, promptHistory) {
+  const eventAt = Date.parse(String(event.at || event.receivedAt || event.generatedAt || ""));
+  const prompt = String(event.text || event.payload?.text || event.payload?.message || "").trim();
+  const reply = String(event.response || event.reply || "");
+  return promptHistory.some((row) => {
+    const rowAt = Date.parse(String(row.at || row.generatedAt || ""));
+    return String(row.prompt || row.text || "").trim() === prompt &&
+      String(row.reply ?? row.response ?? "") === reply &&
+      Number.isFinite(eventAt) && Number.isFinite(rowAt) && Math.abs(eventAt - rowAt) < 60000;
+  });
 }
 
 async function readAllJsonl(filePath) {
@@ -682,11 +731,12 @@ async function queryConversationArchive(params) {
     if (query && !`${row.prompt || ""}\n${row.reply || ""}`.toLowerCase().includes(query)) return false;
     return true;
   });
+  const newestFirst = rows.toSorted((left, right) => conversationTimestamp(right) - conversationTimestamp(left));
   return {
     generatedAt: new Date().toISOString(),
     matched: rows.length,
     count: Math.min(rows.length, limit),
-    items: rows.slice(-limit).reverse()
+    items: newestFirst.slice(0, limit)
   };
 }
 
@@ -710,6 +760,7 @@ async function getConversationArchiveSummary(params = new URLSearchParams()) {
     if (row.error || row.status === "error") errors += 1;
     durationTotal += Number(row.durationMs || 0);
   }
+  const datedRows = rows.filter((row) => Number.isFinite(conversationTimestamp(row))).toSorted((left, right) => conversationTimestamp(left) - conversationTimestamp(right));
   return {
     enabled: true,
     appendOnly: true,
@@ -719,11 +770,15 @@ async function getConversationArchiveSummary(params = new URLSearchParams()) {
     records: rows.length,
     errors,
     averageDurationMs: rows.length ? Math.round(durationTotal / rows.length) : 0,
-    firstAt: rows[0]?.at || null,
-    lastAt: rows.at(-1)?.at || null,
+    firstAt: datedRows[0]?.at || null,
+    lastAt: datedRows.at(-1)?.at || null,
     bySource,
     byRoute
   };
+}
+
+function conversationTimestamp(row) {
+  return Date.parse(String(row.at || row.generatedAt || ""));
 }
 
 async function readJsonl(filePath, limit) {
