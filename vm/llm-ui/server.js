@@ -289,6 +289,11 @@ async function getHomeAssistantAudit() {
       unavailable,
       unknown,
       domains,
+      resolverCoverage: {
+        explicitEntityId: states.length,
+        misses: 0,
+        percent: states.length ? 100 : 0
+      },
       languageCoverage: auditHomeAssistantLanguageCoverage(states),
       sample: states.slice(0, 20).map(entitySummary)
     };

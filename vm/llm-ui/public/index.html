@@ -30,6 +30,11 @@
     form { display:grid; grid-template-columns:1fr auto; gap:10px; }
     input, select { width:100%; border:1px solid var(--line); background:var(--panel); color:var(--text); border-radius:7px; padding:12px 14px; font-size:16px; }
     .bar { display:grid; grid-template-columns: minmax(0,1fr) 150px; gap:10px; }
+    .coverage { margin-top:18px; border:1px solid var(--line); border-radius:10px; padding:12px; background:#0d151a; }
+    .coverage h2 { margin:0 0 8px; }
+    .coverage-note { margin:8px 0 0; font-size:12px; }
+    .phrase-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    .phrase-tags span { border:1px solid var(--line); border-radius:999px; padding:5px 8px; color:#c8d7e3; font-size:11px; }
     @media (max-width: 820px) { main { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } form, .bar { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -51,6 +56,17 @@
       <h2>Snapshot</h2>
       <p><span class="dot" id="dot"></span><span id="summary">Loading</span></p>
       <pre id="report"></pre>
+      <div class="coverage" aria-live="polite">
+        <h2>Home Assistant language</h2>
+        <div class="row"><span>Explicit entity IDs</span><span class="value" id="explicitCoverage">...</span></div>
+        <div class="row"><span>Friendly names</span><span class="value" id="friendlyCoverage">...</span></div>
+        <div class="row"><span>Object IDs</span><span class="value" id="objectCoverage">...</span></div>
+        <div class="row"><span>Phrase misses</span><span class="value" id="phraseMisses">...</span></div>
+        <div class="phrase-tags" aria-label="Supported phrase families">
+          <span>device state</span><span>rooms</span><span>history</span><span>lights</span><span>batteries</span><span>updates</span><span>weather</span><span>calendar</span>
+        </div>
+        <p class="coverage-note" id="personaStatus">Jarvis replies stay concise, live-data grounded, and honest about ambiguity.</p>
+      </div>
     </aside>
     <section>
       <div class="bar">
@@ -101,6 +117,16 @@
         $("ha").textContent = data.integrations.homeAssistant.configured ? "Configured" : "Optional";
         $("dot").className = `dot ${data.health.status === "Ready" ? "ok" : "warn"}`;
         $("summary").textContent = `${data.models.installed.length} installed model(s), ${data.performance.requests.total} recorded API request(s).`;
+        const audit = data.homeAssistantAudit || {};
+        const language = audit.languageCoverage || {};
+        const percent = (entry) => entry && entry.percent !== undefined ? `${entry.percent}%` : "Unknown";
+        $("explicitCoverage").textContent = audit.resolverCoverage?.percent !== undefined ? `${audit.resolverCoverage.percent}%` : "Unknown";
+        $("friendlyCoverage").textContent = percent(language.friendlyName);
+        $("objectCoverage").textContent = percent(language.objectId);
+        $("phraseMisses").textContent = Array.isArray(language.sampleMisses) ? language.sampleMisses.length : "Unknown";
+        $("personaStatus").textContent = String(audit.status || "").toLowerCase() === "connected"
+          ? "Jarvis is grounded in the current Home Assistant inventory; conflicts and unavailable devices are stated instead of guessed."
+          : "Jarvis language coverage is waiting for a configured Home Assistant connection.";
         $("report").textContent = JSON.stringify(data, null, 2);
       } catch (error) {
         $("dot").className = "dot bad";

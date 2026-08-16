@@ -78,6 +78,8 @@ The included route is read-only for natural-language device questions. A request
 
 All deterministic and model-backed voice answers use the same Jarvis persona: concise, precise, directly addressed, lightly dry, and grounded in live data.
 
+The VM dashboard now has a dedicated **Home Assistant** view showing explicit and natural-language entity coverage, common phrase families, stale-state counts, answer scoring, conflict visibility, and the active Jarvis response contract. See [Jarvis Home Assistant phrase coverage](JARVIS_PHRASE_COVERAGE.md) for the full phrase matrix and interpretation guidance.
+
 Run the offline phrase suite from `vm/llm-ui`:
 
 ```bash

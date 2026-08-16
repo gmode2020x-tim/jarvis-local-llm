@@ -10,6 +10,7 @@ This is the VM-side service for a full Jarvis setup. It runs beside Ollama and p
 - combined dashboard JSON at `GET /api/dashboard`
 - Home Assistant entity audit at `GET /api/home-assistant/audit`
 - prompt review log at `GET /api/prompt-review`
+- dedicated Home Assistant dashboard coverage for entity IDs, friendly names, object IDs, phrase families, stale states, conflicts, and answer scoring
 
 ## Install On The VM
 
@@ -95,3 +96,7 @@ npm run smoke
 ```
 
 `verify:language` checks common Jarvis replies, natural entity aliases, directional device names, aggregate home questions, unavailable states, read-only control handling, and persona guardrails without requiring Home Assistant or Ollama.
+
+In the dashboard, open **Home Assistant** and use **Refresh audit** to compare the current inventory against explicit-ID, friendly-name, and object-ID phrase resolution. The full live inventory audit may take several seconds and reports progress without blocking the other dashboard views.
+
+All deterministic and model-backed Assist answers follow the same Jarvis response contract. See [`../../docs/JARVIS_PHRASE_COVERAGE.md`](../../docs/JARVIS_PHRASE_COVERAGE.md) for the complete phrase matrix and response rules.

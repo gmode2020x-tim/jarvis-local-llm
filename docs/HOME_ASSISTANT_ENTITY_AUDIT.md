@@ -38,3 +38,17 @@ For voice prompts:
 Favor accuracy over speed until you have a deterministic state-summary route.
 
 The bundled VM service also audits every entity with generated friendly-name and object-ID questions. Explicit-ID coverage alone is not sufficient: it proves that an API can retrieve `sensor.office_temperature`, but not that a person can ask `How warm is the office?` and reach the correct device.
+
+## Dashboard Interpretation
+
+The dedicated **Home Assistant** dashboard view displays three different coverage measures:
+
+- **Explicit ID coverage**: every current `domain.object_id` can be retrieved directly.
+- **Friendly-name coverage**: a natural question built from each entity's current friendly name resolves correctly.
+- **Object-ID coverage**: a domain-qualified natural question built from each object ID resolves correctly.
+
+`sampleMisses` should be empty. A non-empty list is actionable: add or adjust normalization, domain constraints, device-class wording, or ambiguity handling, then rerun the offline phrase suite and the live audit.
+
+The audit can take several seconds because it evaluates the current inventory. The dashboard keeps its other views usable while it runs and labels a manual refresh as `Auditing…` until completion.
+
+See [Jarvis Home Assistant phrase coverage](JARVIS_PHRASE_COVERAGE.md) for supported question families, response rules, and end-to-end verification guidance.

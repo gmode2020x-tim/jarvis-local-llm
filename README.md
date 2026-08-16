@@ -86,6 +86,8 @@ http://YOUR-LLM-HOST:8787
 - [VM UI/API package](vm/llm-ui/README.md)
 - [Tuning guide](docs/TUNING.md)
 - [Home Assistant integration](docs/HOME_ASSISTANT.md)
+- [Jarvis Home Assistant phrase coverage](docs/JARVIS_PHRASE_COVERAGE.md)
+- [Home Assistant entity audit](docs/HOME_ASSISTANT_ENTITY_AUDIT.md)
 - [Wake word setup](docs/JARVIS_WAKE_WORD.md)
 - [Voice dataset prep](docs/VOICE_DATASETS.md)
 - [Public release checklist](docs/SECURITY_PUBLIC_RELEASE.md)
