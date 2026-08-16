@@ -6,7 +6,7 @@ Jarvis is a self-hosted assistant package for a local workstation plus an option
 - an OpenAI-compatible local LLM backend, tested with Ollama
 - a browser console for chat, model discovery, and LLM host inspection
 - a VM-side Jarvis LLM UI/API service for Ollama, dashboard status, Home Assistant webhooks, prompt review, and benchmark checks
-- local memory and notes
+- local memory, notes, and an append-only full conversation archive
 - helper tools for project status, host checks, model checks, and Home Assistant voice experiments
 - natural Home Assistant phrase resolution with deterministic Jarvis-personality answers
 - voice dataset preparation utilities for custom TTS work
@@ -91,6 +91,12 @@ http://YOUR-LLM-HOST:8787
 - [Wake word setup](docs/JARVIS_WAKE_WORD.md)
 - [Voice dataset prep](docs/VOICE_DATASETS.md)
 - [Public release checklist](docs/SECURITY_PUBLIC_RELEASE.md)
+
+## Conversation History
+
+Every completed workstation turn is appended to `data/assistant_conversations.jsonl`; the smaller `assistant_memory.json` file still keeps only the recent context sent to the model. VM chat, Home Assistant Assist, deterministic answers, failures, and deep follow-ups are appended to the VM data volume as `conversation-archive.jsonl`. Neither archive is automatically pruned.
+
+Conversation text can contain private household information. Both files are ignored by Git, and the VM analysis endpoints require the configured `HOME_ASSISTANT_WEBHOOK_SECRET`. Back up the VM data directory privately if the history must survive disk or VM loss.
 
 ## Project Map
 

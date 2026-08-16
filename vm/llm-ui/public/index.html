@@ -49,6 +49,7 @@
       <div class="row"><span>Deep</span><span class="value" id="deepModel">...</span></div>
       <div class="row"><span>Ollama</span><span class="value" id="ollama">...</span></div>
       <div class="row"><span>Home Assistant</span><span class="value" id="ha">...</span></div>
+      <div class="row"><span>Conversation archive</span><span class="value" id="conversations">...</span></div>
       <div class="actions">
         <button id="refresh">Refresh</button>
         <button id="benchmark">Benchmark</button>
@@ -115,6 +116,7 @@
         $("deepModel").textContent = data.models.deepModel;
         $("ollama").textContent = data.health.ollama.ok ? "Ready" : "Degraded";
         $("ha").textContent = data.integrations.homeAssistant.configured ? "Configured" : "Optional";
+        $("conversations").textContent = `${data.conversations?.records ?? 0} saved`;
         $("dot").className = `dot ${data.health.status === "Ready" ? "ok" : "warn"}`;
         $("summary").textContent = `${data.models.installed.length} installed model(s), ${data.performance.requests.total} recorded API request(s).`;
         const audit = data.homeAssistantAudit || {};

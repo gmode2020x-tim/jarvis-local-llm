@@ -52,10 +52,13 @@ const config = {
 const requestHistory = [];
 const maxRequestHistory = 500;
 const promptReviewPath = path.join(config.dataDir, "prompt-review.jsonl");
+const conversationArchivePath = path.resolve(config.dataDir, env("JARVIS_CONVERSATION_ARCHIVE_PATH", "conversation-archive.jsonl"));
 const eventLogPath = path.join(config.dataDir, "home-assistant-events.jsonl");
 const benchmarkPath = path.join(config.dataDir, "benchmark.json");
+let conversationArchiveQueue = Promise.resolve();
 
 await fs.mkdir(config.dataDir, { recursive: true });
+await ensureConversationArchive();
 
 const server = http.createServer(async (req, res) => {
   const startedAt = Date.now();
@@ -100,6 +103,14 @@ async function route(req, res, url, body) {
   if (req.method === "GET" && pathname === "/api/dashboard") return sendJson(res, 200, await getDashboard());
   if (req.method === "GET" && pathname === "/api/integrations") return sendJson(res, 200, await getIntegrations());
   if (req.method === "GET" && pathname === "/api/prompt-review") return sendJson(res, 200, await readJsonl(promptReviewPath, clamp(Number(url.searchParams.get("limit") || 50), 1, 200)));
+  if (req.method === "GET" && pathname === "/api/conversations") {
+    authorizeConversationArchive(req);
+    return sendJson(res, 200, await queryConversationArchive(url.searchParams));
+  }
+  if (req.method === "GET" && pathname === "/api/conversations/summary") {
+    authorizeConversationArchive(req);
+    return sendJson(res, 200, await getConversationArchiveSummary(url.searchParams));
+  }
   if (req.method === "GET" && pathname === "/api/home-assistant/events") return sendJson(res, 200, await readJsonl(eventLogPath, 200));
   if (req.method === "GET" && pathname === "/api/home-assistant/audit") return sendJson(res, 200, await getHomeAssistantAudit());
   if (req.method === "GET" && pathname === "/api/home-assistant/entities") return sendJson(res, 200, await getHomeAssistantEntities(url.searchParams));
@@ -174,15 +185,16 @@ async function getPerformance() {
 }
 
 async function getDashboard() {
-  const [health, models, performance, integrations, audit, benchmark] = await Promise.all([
+  const [health, models, performance, integrations, audit, benchmark, conversations] = await Promise.all([
     getHealth(),
     getModels(),
     getPerformance(),
     getIntegrations(),
     getHomeAssistantAudit(),
-    getBenchmark()
+    getBenchmark(),
+    getConversationArchiveSummary()
   ]);
-  return { generatedAt: new Date().toISOString(), health, models, performance, integrations, homeAssistantAudit: audit, benchmark };
+  return { generatedAt: new Date().toISOString(), health, models, performance, integrations, homeAssistantAudit: audit, benchmark, conversations };
 }
 
 async function getIntegrations() {
@@ -208,23 +220,38 @@ async function chat(payload, options = {}) {
   const system = payload.system || (mode === "voice" ? config.voiceSystemPrompt : config.systemPrompt);
   const context = payload.context ? `\n\nContext:\n${String(payload.context).slice(0, 6000)}` : "";
   const startedAt = Date.now();
-  const result = await ollamaChat({
-    model,
-    system,
-    prompt: `${prompt}${context}`,
-    maxTokens,
-    temperature: Number(payload.temperature ?? 0.25)
-  });
-  const response = {
-    generatedAt: new Date().toISOString(),
-    source: options.source || payload.source || "api_chat",
-    mode,
-    model,
-    response: result.message,
-    durationMs: Date.now() - startedAt
-  };
-  await appendJsonl(promptReviewPath, { ...response, prompt: prompt.slice(0, 1000) });
-  return response;
+  try {
+    const result = await ollamaChat({
+      model,
+      system,
+      prompt: `${prompt}${context}`,
+      maxTokens,
+      temperature: Number(payload.temperature ?? 0.25)
+    });
+    const response = {
+      generatedAt: new Date().toISOString(),
+      source: options.source || payload.source || "api_chat",
+      mode,
+      model,
+      response: result.message,
+      durationMs: Date.now() - startedAt
+    };
+    const archived = await appendPromptReview({ ...response, prompt });
+    response.conversationRecordId = archived.id;
+    return response;
+  } catch (error) {
+    await appendPromptReview({
+      generatedAt: new Date().toISOString(),
+      source: options.source || payload.source || "api_chat",
+      mode,
+      model,
+      prompt,
+      response: "",
+      durationMs: Date.now() - startedAt,
+      error: error.message
+    });
+    throw error;
+  }
 }
 
 async function handleHomeAssistantWebhook(secret, payload) {
@@ -236,6 +263,19 @@ async function handleHomeAssistantWebhook(secret, payload) {
   const languageResult = source === "assist" ? await getDeterministicAssistResponse(text) : null;
   const entityContext = languageResult ? "" : await resolveHomeAssistantContext(text);
   const result = languageResult || await chat({ text, context: entityContext, mode: source === "assist" ? "voice" : "default" }, { source });
+  if (!result.conversationRecordId) {
+    const archived = await appendPromptReview({
+      generatedAt: result.generatedAt || new Date().toISOString(),
+      source,
+      mode: result.mode || (source === "assist" ? "voice" : "default"),
+      model: result.model || "deterministic-jarvis",
+      prompt: text,
+      response: result.response || "",
+      durationMs: result.durationMs || 0,
+      route: result.route || "deterministic"
+    });
+    result.conversationRecordId = archived.id;
+  }
 
   if (payload.speak !== false && config.homeAssistantUrl && config.homeAssistantToken && config.defaultSpeaker) {
     await speakInHomeAssistant(result.response).catch((error) => {
@@ -250,6 +290,7 @@ async function handleHomeAssistantWebhook(secret, payload) {
     response: result.response,
     model: result.model,
     durationMs: result.durationMs,
+    conversationRecordId: result.conversationRecordId,
     entityMatches: result.entityMatches || []
   };
   await appendJsonl(eventLogPath, event);
@@ -264,6 +305,15 @@ function authorizeAssistAlias(req, payload) {
   const bodySecret = String(payload.secret || "").trim();
   if ([bearer, headerSecret, bodySecret].includes(config.homeAssistantWebhookSecret)) return;
   throw httpError(403, "Invalid assist secret");
+}
+
+function authorizeConversationArchive(req) {
+  if (!config.homeAssistantWebhookSecret) throw httpError(503, "Conversation analysis requires HOME_ASSISTANT_WEBHOOK_SECRET");
+  const auth = String(req.headers.authorization || "");
+  const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  const headerSecret = String(req.headers["x-jarvis-secret"] || "").trim();
+  if ([bearer, headerSecret].includes(config.homeAssistantWebhookSecret)) return;
+  throw httpError(403, "Invalid conversation archive secret");
 }
 
 async function getHomeAssistantAudit() {
@@ -361,7 +411,8 @@ async function getDeterministicHomeAssistantResponse(text) {
     durationMs: Date.now() - startedAt,
     entityMatches: answer.states.map(entitySummary)
   };
-  await appendJsonl(promptReviewPath, { ...response, prompt: text.slice(0, 1000), route: answer.kind });
+  const archived = await appendPromptReview({ ...response, prompt: text, route: answer.kind });
+  response.conversationRecordId = archived.id;
   return response;
 }
 
@@ -478,7 +529,7 @@ function applyCors(req, res) {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Jarvis-Secret");
 }
 
 async function readJsonBody(req) {
@@ -553,6 +604,126 @@ function entitySummary(entity) {
 async function appendJsonl(filePath, value) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
+}
+
+function normalizeConversationRecord(value, fallback = {}) {
+  return {
+    schemaVersion: 1,
+    id: String(value.id || `conversation-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`),
+    at: String(value.at || value.generatedAt || new Date().toISOString()),
+    source: String(value.source || fallback.source || "unknown"),
+    mode: String(value.mode || fallback.mode || "default"),
+    model: String(value.model || ""),
+    route: String(value.route || ""),
+    durationMs: Number(value.durationMs || 0),
+    prompt: String(value.prompt ?? value.text ?? ""),
+    reply: String(value.reply ?? value.response ?? ""),
+    status: value.error ? "error" : "complete",
+    error: value.error ? String(value.error) : null,
+    conversationId: value.conversationId || value.followUpJob || null,
+    entityMatches: Array.isArray(value.entityMatches) ? value.entityMatches : []
+  };
+}
+
+async function appendPromptReview(value) {
+  const record = normalizeConversationRecord(value);
+  await appendJsonl(promptReviewPath, record);
+  const write = conversationArchiveQueue.then(() => appendJsonl(conversationArchivePath, record));
+  conversationArchiveQueue = write.catch(() => {});
+  await write;
+  return record;
+}
+
+async function ensureConversationArchive() {
+  try {
+    const stat = await fs.stat(conversationArchivePath);
+    if (stat.size > 0) return;
+  } catch {
+    // First run: backfill the existing prompt-review history below.
+  }
+
+  const previous = await readAllJsonl(promptReviewPath);
+  if (!previous.length) return;
+  const records = previous.map((row) => normalizeConversationRecord(row, { source: "legacy_prompt_review" }));
+  await fs.mkdir(path.dirname(conversationArchivePath), { recursive: true });
+  await fs.writeFile(conversationArchivePath, `${records.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
+}
+
+async function readAllJsonl(filePath) {
+  try {
+    const lines = (await fs.readFile(filePath, "utf8")).split(/\r?\n/).filter(Boolean);
+    const rows = [];
+    for (const line of lines) {
+      try {
+        rows.push(JSON.parse(line));
+      } catch {
+        // Keep later valid records queryable if one historical line was damaged.
+      }
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+async function queryConversationArchive(params) {
+  const limit = clamp(Number(params.get("limit") || 100), 1, 1000);
+  const source = String(params.get("source") || "").toLowerCase();
+  const route = String(params.get("route") || "").toLowerCase();
+  const query = String(params.get("q") || "").toLowerCase();
+  const from = Date.parse(String(params.get("from") || ""));
+  const to = Date.parse(String(params.get("to") || ""));
+  const rows = (await readAllJsonl(conversationArchivePath)).filter((row) => {
+    const at = Date.parse(String(row.at || ""));
+    if (source && String(row.source || "").toLowerCase() !== source) return false;
+    if (route && String(row.route || "").toLowerCase() !== route) return false;
+    if (Number.isFinite(from) && (!Number.isFinite(at) || at < from)) return false;
+    if (Number.isFinite(to) && (!Number.isFinite(at) || at > to)) return false;
+    if (query && !`${row.prompt || ""}\n${row.reply || ""}`.toLowerCase().includes(query)) return false;
+    return true;
+  });
+  return {
+    generatedAt: new Date().toISOString(),
+    matched: rows.length,
+    count: Math.min(rows.length, limit),
+    items: rows.slice(-limit).reverse()
+  };
+}
+
+async function getConversationArchiveSummary(params = new URLSearchParams()) {
+  const days = clamp(Number(params.get?.("days") || 0), 0, 36500);
+  const cutoff = days ? Date.now() - days * 86400000 : 0;
+  const rows = (await readAllJsonl(conversationArchivePath)).filter((row) => {
+    if (!cutoff) return true;
+    const at = Date.parse(String(row.at || ""));
+    return Number.isFinite(at) && at >= cutoff;
+  });
+  const bySource = {};
+  const byRoute = {};
+  let errors = 0;
+  let durationTotal = 0;
+  for (const row of rows) {
+    const source = String(row.source || "unknown");
+    const route = String(row.route || "unspecified");
+    bySource[source] = (bySource[source] || 0) + 1;
+    byRoute[route] = (byRoute[route] || 0) + 1;
+    if (row.error || row.status === "error") errors += 1;
+    durationTotal += Number(row.durationMs || 0);
+  }
+  return {
+    enabled: true,
+    appendOnly: true,
+    retainedWithoutPruning: true,
+    path: path.basename(conversationArchivePath),
+    days: days || null,
+    records: rows.length,
+    errors,
+    averageDurationMs: rows.length ? Math.round(durationTotal / rows.length) : 0,
+    firstAt: rows[0]?.at || null,
+    lastAt: rows.at(-1)?.at || null,
+    bySource,
+    byRoute
+  };
 }
 
 async function readJsonl(filePath, limit) {

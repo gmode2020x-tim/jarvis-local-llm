@@ -10,6 +10,7 @@ This is the VM-side service for a full Jarvis setup. It runs beside Ollama and p
 - combined dashboard JSON at `GET /api/dashboard`
 - Home Assistant entity audit at `GET /api/home-assistant/audit`
 - prompt review log at `GET /api/prompt-review`
+- append-only conversation archive with protected query and summary endpoints
 - dedicated Home Assistant dashboard coverage for entity IDs, friendly names, object IDs, phrase families, stale states, conflicts, and answer scoring
 
 ## Install On The VM
@@ -70,6 +71,7 @@ Set a long random secret:
 
 ```dotenv
 HOME_ASSISTANT_WEBHOOK_SECRET=change-this-long-random-secret
+JARVIS_CONVERSATION_ARCHIVE_PATH=conversation-archive.jsonl
 ```
 
 Then call:
@@ -87,6 +89,21 @@ Example body:
   "speak": true
 }
 ```
+
+## Saved Conversations And Analysis
+
+All VM chat, Home Assistant Assist, deterministic, error, and model-backed turns are saved in `DATA_DIR/conversation-archive.jsonl`. Existing prompt-review records are backfilled when the archive is first created. Records are not automatically deleted or shortened, and the dashboard displays the saved record count.
+
+Use the webhook secret as a bearer token to read the private analysis endpoints:
+
+```bash
+curl -H "Authorization: Bearer $HOME_ASSISTANT_WEBHOOK_SECRET" \
+  "http://YOUR-LLM-HOST:8787/api/conversations/summary?days=30"
+curl -H "Authorization: Bearer $HOME_ASSISTANT_WEBHOOK_SECRET" \
+  "http://YOUR-LLM-HOST:8787/api/conversations?source=assist&limit=100"
+```
+
+The detail endpoint accepts `limit` (maximum 1000), `source`, `route`, `q`, `from`, and `to`. Keep the data directory private and back it up; it contains complete prompts and replies.
 
 ## Smoke Test
 

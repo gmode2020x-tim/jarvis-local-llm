@@ -63,7 +63,22 @@ DEEP_MODEL=llama3.1:8b
 HOME_ASSISTANT_URL=http://homeassistant.local:8123
 HOME_ASSISTANT_TOKEN=
 HOME_ASSISTANT_WEBHOOK_SECRET=change-this-long-random-secret
+JARVIS_CONVERSATION_ARCHIVE_PATH=conversation-archive.jsonl
 ```
+
+## Conversation Archive
+
+The VM service appends every API chat, Home Assistant Assist answer, deterministic response, failed model call, and deep-mode result to `conversation-archive.jsonl` in `DATA_DIR`. Existing `prompt-review.jsonl` history is copied into the archive on the first start after this feature is installed. The file is append-only and has no automatic retention limit.
+
+The dashboard reports the archive record count. Full text and analysis summaries are deliberately protected by the same secret used for the Home Assistant webhook:
+
+```powershell
+$headers = @{ Authorization = "Bearer $env:HOME_ASSISTANT_WEBHOOK_SECRET" }
+Invoke-RestMethod -Headers $headers "http://YOUR-LLM-HOST:8787/api/conversations/summary?days=30"
+Invoke-RestMethod -Headers $headers "http://YOUR-LLM-HOST:8787/api/conversations?source=assist&limit=100"
+```
+
+Query parameters are `limit` (maximum 1000), `source`, `route`, `q`, `from`, and `to`. Dates use ISO 8601. Because the archive contains full prompts and replies, keep port `8787` on a trusted network, never commit the data directory, and include `DATA_DIR` in private backups. A container or service restart does not remove history; loss of the underlying VM disk still will.
 
 ## Smoke Tests
 

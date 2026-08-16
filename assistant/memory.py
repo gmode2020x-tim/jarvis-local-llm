@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
+
 MAX_FACT_CHARS = 300
 MAX_TURN_TEXT_CHARS = 180
 MAX_PROMPT_CONTEXT_CHARS = 900
@@ -14,6 +16,11 @@ class MemoryStore:
     path: Path
     notes_path: Path
     time_zone: str = "UTC"
+
+    @property
+    def conversation_archive_path(self) -> Path:
+        """Durable, append-only history; separate from the bounded prompt context."""
+        return self.path.with_name("assistant_conversations.jsonl")
 
     def now(self) -> datetime:
         try:
@@ -40,12 +47,37 @@ class MemoryStore:
         self.save(data)
         return f"Remembered {key}."
 
-    def append_turn(self, user_text: str, assistant_text: str) -> None:
+    def append_turn(
+        self,
+        user_text: str,
+        assistant_text: str,
+        *,
+        status: str = "complete",
+        error: str | None = None,
+    ) -> None:
+        stamp = self.now().isoformat(timespec="seconds")
+        archive_record = {
+            "schema_version": 1,
+            "id": f"local-{uuid4()}",
+            "at": stamp,
+            "source": "local_runtime",
+            "user": user_text,
+            "assistant": assistant_text,
+            "status": status,
+            "error": error,
+        }
+        self.conversation_archive_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.conversation_archive_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(archive_record, ensure_ascii=False) + "\n")
+
+        if status == "error":
+            return
+
         data = self.load()
         turns = data.setdefault("recent_turns", [])
         turns.append(
             {
-                "at": self.now().isoformat(timespec="seconds"),
+                "at": stamp,
                 "user": user_text,
                 "assistant": assistant_text,
             }

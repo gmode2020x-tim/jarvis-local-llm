@@ -50,6 +50,13 @@ class LlmVmJarvisBrain:
         self._chat_tools = self.chat_tool_schemas()
 
     def respond(self, user_text: str) -> str:
+        try:
+            return self._respond(user_text)
+        except Exception as error:
+            self.memory.append_turn(user_text, "", status="error", error=str(error))
+            raise
+
+    def _respond(self, user_text: str) -> str:
         direct_response = self.direct_response(user_text)
         if direct_response is not None:
             self.memory.append_turn(user_text, direct_response)
@@ -183,6 +190,13 @@ class LocalJarvisBrain:
         self.tools = ToolRunner(root, memory, LlmVmClient(self.config))
 
     def respond(self, user_text: str) -> str:
+        try:
+            return self._respond(user_text)
+        except Exception as error:
+            self.memory.append_turn(user_text, "", status="error", error=str(error))
+            raise
+
+    def _respond(self, user_text: str) -> str:
         lowered = user_text.lower()
         if "vm" in lowered or "model" in lowered:
             response = self.tools.get_llm_vm_status()

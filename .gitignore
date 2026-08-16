@@ -16,6 +16,7 @@ data/processed/*
 !data/processed/.gitkeep
 data/assistant_memory.json
 data/assistant_notes.md
+data/assistant_conversations.jsonl
 vm/llm-ui/.env
 vm/llm-ui/data/
 datasets/*
