@@ -90,5 +90,8 @@ Example body:
 ## Smoke Test
 
 ```bash
+npm run verify:language
 npm run smoke
 ```
+
+`verify:language` checks common Jarvis replies, natural entity aliases, directional device names, aggregate home questions, unavailable states, read-only control handling, and persona guardrails without requiring Home Assistant or Ollama.

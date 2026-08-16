@@ -8,6 +8,7 @@ Jarvis is a self-hosted assistant package for a local workstation plus an option
 - a VM-side Jarvis LLM UI/API service for Ollama, dashboard status, Home Assistant webhooks, prompt review, and benchmark checks
 - local memory and notes
 - helper tools for project status, host checks, model checks, and Home Assistant voice experiments
+- natural Home Assistant phrase resolution with deterministic Jarvis-personality answers
 - voice dataset preparation utilities for custom TTS work
 
 Use only voices, recordings, and automation targets that you own or have permission to use.

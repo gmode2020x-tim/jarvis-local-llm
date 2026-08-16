@@ -12,6 +12,7 @@ Expose or record:
 - stale entities
 - prompt/reply review rows for state-specific questions
 - pass/review/error scoring for entity-state answers
+- friendly-name and object-ID natural-language coverage
 
 ## Example Endpoints
 
@@ -35,3 +36,5 @@ For voice prompts:
 6. Retry with narrower state context if the first answer misses the expected value.
 
 Favor accuracy over speed until you have a deterministic state-summary route.
+
+The bundled VM service also audits every entity with generated friendly-name and object-ID questions. Explicit-ID coverage alone is not sufficient: it proves that an API can retrieve `sensor.office_temperature`, but not that a person can ask `How warm is the office?` and reach the correct device.

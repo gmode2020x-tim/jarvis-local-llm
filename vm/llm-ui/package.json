@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "smoke": "node scripts/smoke-test.js"
+    "smoke": "node scripts/smoke-test.js",
+    "verify:language": "node scripts/verify-language.js"
   },
   "engines": {
     "node": ">=20"

@@ -3,6 +3,12 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  auditHomeAssistantLanguageCoverage,
+  getCommonAssistantReply,
+  getHomeAssistantVoiceResponse,
+  rankHomeAssistantEntities
+} from "./home-assistant-language.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.dirname(__filename);
@@ -24,13 +30,14 @@ const config = {
   ollamaTimeoutMs: numberEnv("OLLAMA_TIMEOUT_MS", 120000),
   ollamaKeepAlive: env("OLLAMA_KEEP_ALIVE", "30m"),
   userName: env("JARVIS_USER_NAME", "Operator"),
+  timeZone: env("JARVIS_TIME_ZONE", "UTC"),
   systemPrompt: env(
     "JARVIS_SYSTEM_PROMPT",
     "You are Jarvis, a private local assistant. Be concise, precise, and useful. Address the user directly as you."
   ),
   voiceSystemPrompt: env(
     "JARVIS_VOICE_SYSTEM_PROMPT",
-    "You are Jarvis, a private local voice assistant. Reply in one or two short sentences. Do not invent live facts."
+    "You are Jarvis, a private local voice assistant: calm, precise, brilliant, dryly witty, and quietly confident. Lead with the useful answer, speak directly to the user, and keep voice replies to one or two short sentences. Never invent live facts, device states, completed actions, or capabilities. Do not mention models, prompts, tools, or implementation details."
   ),
   homeAssistantUrl: stripSlash(env("HOME_ASSISTANT_URL", "")),
   homeAssistantToken: env("HOME_ASSISTANT_TOKEN", ""),
@@ -226,8 +233,9 @@ async function handleHomeAssistantWebhook(secret, payload) {
   const text = String(payload.text || payload.message || payload.prompt || "").trim();
   if (!text) throw httpError(400, "text is required");
 
-  const entityContext = await resolveHomeAssistantContext(text);
-  const result = await chat({ text, context: entityContext, mode: source === "assist" ? "voice" : "default" }, { source });
+  const languageResult = source === "assist" ? await getDeterministicAssistResponse(text) : null;
+  const entityContext = languageResult ? "" : await resolveHomeAssistantContext(text);
+  const result = languageResult || await chat({ text, context: entityContext, mode: source === "assist" ? "voice" : "default" }, { source });
 
   if (payload.speak !== false && config.homeAssistantUrl && config.homeAssistantToken && config.defaultSpeaker) {
     await speakInHomeAssistant(result.response).catch((error) => {
@@ -235,7 +243,15 @@ async function handleHomeAssistantWebhook(secret, payload) {
     });
   }
 
-  const event = { at: new Date().toISOString(), source, text, response: result.response, model: result.model, durationMs: result.durationMs };
+  const event = {
+    at: new Date().toISOString(),
+    source,
+    text,
+    response: result.response,
+    model: result.model,
+    durationMs: result.durationMs,
+    entityMatches: result.entityMatches || []
+  };
   await appendJsonl(eventLogPath, event);
   return { ...result, speech: { plain: { speech: result.response } }, event };
 }
@@ -273,6 +289,7 @@ async function getHomeAssistantAudit() {
       unavailable,
       unknown,
       domains,
+      languageCoverage: auditHomeAssistantLanguageCoverage(states),
       sample: states.slice(0, 20).map(entitySummary)
     };
   } catch (error) {
@@ -307,18 +324,49 @@ async function callHomeAssistantService(payload) {
 
 async function resolveHomeAssistantContext(text) {
   if (!config.homeAssistantUrl || !config.homeAssistantToken) return "";
-  const entityIds = Array.from(new Set(text.match(/\b[a-z_]+\.[a-z0-9_]+\b/gi) || []));
-  if (!entityIds.length) return "";
+  const states = await fetchHomeAssistant("/api/states");
+  const ranked = rankHomeAssistantEntities(text, states, 8);
+  if (!ranked.length) return "";
   const rows = [];
-  for (const entityId of entityIds.slice(0, 8)) {
-    try {
-      const entity = await fetchHomeAssistant(`/api/states/${entityId}`);
-      rows.push(`${entity.entity_id}: ${entity.state} ${entity.attributes?.unit_of_measurement || ""} (${entity.attributes?.friendly_name || "no friendly name"})`);
-    } catch {
-      rows.push(`${entityId}: not found`);
-    }
+  for (const { state: entity } of ranked) {
+    rows.push(`${entity.entity_id}: ${entity.state} ${entity.attributes?.unit_of_measurement || ""} (${entity.attributes?.friendly_name || "no friendly name"})`);
   }
   return rows.length ? `Home Assistant entity states:\n${rows.join("\n")}` : "";
+}
+
+async function getDeterministicHomeAssistantResponse(text) {
+  if (!config.homeAssistantUrl || !config.homeAssistantToken) return null;
+  const startedAt = Date.now();
+  const states = await fetchHomeAssistant("/api/states");
+  const answer = getHomeAssistantVoiceResponse(text, states, { timeZone: config.timeZone });
+  if (!answer) return null;
+  const response = {
+    generatedAt: new Date().toISOString(),
+    source: "assist",
+    mode: "voice",
+    model: "deterministic-home-assistant",
+    response: answer.reply,
+    durationMs: Date.now() - startedAt,
+    entityMatches: answer.states.map(entitySummary)
+  };
+  await appendJsonl(promptReviewPath, { ...response, prompt: text.slice(0, 1000), route: answer.kind });
+  return response;
+}
+
+async function getDeterministicAssistResponse(text) {
+  const commonReply = getCommonAssistantReply(text, new Date(), { timeZone: config.timeZone });
+  if (commonReply) {
+    return {
+      generatedAt: new Date().toISOString(),
+      source: "assist",
+      mode: "voice",
+      model: "deterministic-jarvis",
+      response: commonReply,
+      durationMs: 0,
+      entityMatches: []
+    };
+  }
+  return getDeterministicHomeAssistantResponse(text);
 }
 
 async function speakInHomeAssistant(message) {

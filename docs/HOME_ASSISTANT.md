@@ -58,3 +58,28 @@ HOME_ASSISTANT_WEBHOOK_SECRET=YOUR_LONG_RANDOM_SECRET
 JARVIS_TTS_ENTITY=tts.piper
 JARVIS_DEFAULT_SPEAKER=media_player.YOUR_SPEAKER
 ```
+
+## Natural Phrase Coverage
+
+Assist questions do not need to contain an entity ID. The VM service builds aliases from each entity's current friendly name, object ID, domain, and device class, then ranks only plausible matches. This supports phrases such as:
+
+- `What is the living room humidity?`
+- `How much charge does the garage sensor have?`
+- `Is the left garage door open?`
+- `What is the family room TV playing?`
+- `When is the next automatic backup?`
+- `Which lights are on?`
+- `Are any batteries low?`
+- `Are any updates available?`
+
+Directional words and room names are weighted so similarly named devices do not silently replace one another. Ambiguous questions produce a short clarification, and unavailable entities are reported honestly. General questions that happen to share a word with an entity are not forced into the Home Assistant route.
+
+The included route is read-only for natural-language device questions. A request such as `Turn on the kitchen lights` receives an honest capability response unless you deliberately add and authorize a control workflow.
+
+All deterministic and model-backed voice answers use the same Jarvis persona: concise, precise, directly addressed, lightly dry, and grounded in live data.
+
+Run the offline phrase suite from `vm/llm-ui`:
+
+```bash
+npm run verify:language
+```
