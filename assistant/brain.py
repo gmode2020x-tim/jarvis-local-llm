@@ -18,8 +18,8 @@ You are concise, calm, technically precise, conversational, and confidently sarc
 Operating rules:
 - Prefer brief spoken answers unless the user asks for detail.
 - Address the current user directly as "you"; do not refer to the current user in the third person.
-- Address the user naturally by their configured name. Do not default to stiff titles such as "sir."
-- Use dry, observant sarcasm regularly when it will not obscure the answer. Be witty, never cruel or personal.
+- Address the user naturally by their configured name when it fits. Do not repeat the name in every reply or default to stiff titles such as "sir."
+- Use dry, observant sarcasm occasionally when it will not obscure the answer. Never force a joke onto a routine factual reply; be witty, never cruel or personal.
 - Prefer natural contractions and everyday phrasing over formal assistant language.
 - Do not start with generic openings, greetings, or filler like "How can I assist?"
 - If you use a brief acknowledgement, immediately follow through with the direct answer or the tool-backed next step.
@@ -104,9 +104,9 @@ class LlmVmJarvisBrain:
         ):
             return self.tools.get_llm_vm_status()
         if "local status" in lowered or lowered in {"status", "system status"}:
-            return f"{self.config.user_name}, local status is {self.tools.get_local_status()}. The machinery appears to be earning its electricity."
+            return f"Here's the local status, {self.config.user_name}: {self.tools.get_local_status()}"
         if ("list" in lowered or "show" in lowered) and ("project" in lowered or "files" in lowered):
-            return f"{self.config.user_name}, the project files are {self.tools.list_project_files()}. Organization has made a rare appearance."
+            return f"Here are the project files: {self.tools.list_project_files()}"
         if lowered.startswith("ping "):
             return self.tools.ping_host(user_text.split(maxsplit=1)[1].strip())
         return None
@@ -187,23 +187,23 @@ class LocalJarvisBrain:
         if "vm" in lowered or "model" in lowered:
             response = self.tools.get_llm_vm_status()
         elif "status" in lowered:
-            response = f"{self.config.user_name}, local status is {self.tools.get_local_status()}. Nothing is smoking, so expectations have been exceeded."
+            response = f"Here's the local status, {self.config.user_name}: {self.tools.get_local_status()}"
         elif any(word in lowered for word in ("calendar", "appointment", "appointments", "plans", "tomorrow")):
             response = (
                 f"I can't check that yet, {self.config.user_name}; calendar access isn't connected in the local verification backend. "
-                "Connect it and I'll interrogate the schedule properly."
+                "Connect it and I can check the schedule directly."
             )
         elif "how are you" in lowered or "are you there" in lowered:
             response = f"Here and running beautifully, {self.config.user_name}. Apparently one of us should be."
         elif "tim" in lowered and ("third person" in lowered or "refer" in lowered or "address" in lowered):
             response = f"I will address you directly as {self.config.user_name}, not talk about you in the third person."
         elif "file" in lowered or "project" in lowered:
-            response = f"{self.config.user_name}, the project files are {self.tools.list_project_files()}. Organization has made a rare appearance."
+            response = f"Here are the project files: {self.tools.list_project_files()}"
         elif "remember" in lowered:
             response = self.tools.remember_fact("offline_test", user_text)
         elif "ping" in lowered:
             response = self.tools.ping_host("127.0.0.1")
         else:
-            response = f"I'm online, {self.config.user_name}. Use JARVIS_BACKEND=llm_vm for live VM chat—the less ceremonial route to an actual answer."
+            response = f"I'm online, {self.config.user_name}. Use JARVIS_BACKEND=llm_vm for live VM chat."
         self.memory.append_turn(user_text, response)
         return response

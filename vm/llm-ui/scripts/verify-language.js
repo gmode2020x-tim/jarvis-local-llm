@@ -24,6 +24,8 @@ const states = [
   state("switch.kitchen_lights", "Kitchen Lights", "off"),
   state("media_player.family_room_tv", "Family Room TV", "playing", { device_class: "tv", media_title: "Nature Documentary" }),
   state("camera.garage", "Garage Camera", "idle"),
+  state("camera.driveway", "Driveway Camera", "idle"),
+  state("camera.back_door", "Back Door Camera", "unavailable"),
   state("update.home_assistant_core_update", "Home Assistant Core Update", "on"),
   state("automation.night_lights", "Night Lights", "on"),
   state("binary_sensor.wan", "Internet Connection", "on", { device_class: "connectivity" }),
@@ -52,6 +54,7 @@ for (const [prompt, entityId, replyPattern] of cases) {
   assert.equal(result.states[0]?.entity_id, entityId, `Wrong entity for: ${prompt}`);
   assert.match(result.reply, replyPattern, `Wrong reply for: ${prompt}`);
   assert.doesNotMatch(result.reply, /As an AI|language model|Tim is|Tim's/i, `Persona leak for: ${prompt}`);
+  assert.doesNotMatch(result.reply, /figures have behaved|pleasingly direct answer|submitted its report|supplied the evidence/i, `Canned aside for: ${prompt}`);
 }
 
 const aggregates = [
@@ -60,17 +63,19 @@ const aggregates = [
   ["Are any locks unlocked?", /No available locks are unlocked/],
   ["Are any updates available?", /1 update is available/],
   ["Which automations are enabled?", /1 automation is enabled/],
-  ["Are any batteries low?", /1 battery is low: Garage Climate Sensor Battery/]
+  ["Are any batteries low?", /1 battery is low: Garage Climate Sensor Battery/],
+  ["How many cameras do I have in my house?", /You have 3 cameras in Home Assistant\. One is currently unavailable\./]
 ];
 
 for (const [prompt, replyPattern] of aggregates) {
   const result = getHomeAssistantVoiceResponse(prompt, states);
   assert(result, `No aggregate result for: ${prompt}`);
   assert.match(result.reply, replyPattern, `Wrong aggregate reply for: ${prompt}`);
+  assert.doesNotMatch(result.reply, /more than one plausible match|figures have behaved|thoroughly interrogated|rare outbreak/i, `Unnatural aggregate reply for: ${prompt}`);
 }
 
 const control = getHomeAssistantVoiceResponse("Turn on the kitchen lights", states);
-assert.match(control.reply, /control is not enabled/i);
+assert.match(control.reply, /control (?:is not|isn't) enabled/i);
 
 const conflictingDoors = [
   state("cover.garage_door_left", "Garage Door Left", "closed", { device_class: "garage" }),
@@ -78,7 +83,7 @@ const conflictingDoors = [
 ];
 const conflict = getHomeAssistantVoiceResponse("Is the left garage door open?", conflictingDoors);
 assert.match(conflict.reply, /conflicting states/i);
-assert.match(conflict.reply, /will not guess, Operator/i);
+assert.match(conflict.reply, /won't guess/i);
 
 const duplicateRightDoor = [
   state("cover.garage_door_right", "Garage Door Right", "closed", { device_class: "garage" }),

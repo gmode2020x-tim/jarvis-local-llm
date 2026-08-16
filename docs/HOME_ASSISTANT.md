@@ -76,9 +76,11 @@ Directional words and room names are weighted so similarly named devices do not 
 
 The included route is read-only for natural-language device questions. A request such as `Turn on the kitchen lights` receives an honest capability response unless you deliberately add and authorize a control workflow.
 
-All deterministic and model-backed voice answers use the same Jarvis persona: concise, precise, conversational, directly addressed by the configured user name, confidently sarcastic, and grounded in live data. Sarcasm never overrides the live state or turns a failed action into a success claim.
+All deterministic and model-backed voice answers use the same Jarvis persona: concise, precise, conversational, occasionally addressed by the configured user name, dryly witty, and grounded in live data. Routine state, count, health, travel, and activity answers are allowed to be plain. Jarvis never appends a joke merely to prove he has a personality, and sarcasm never overrides live state or turns a failed action into a success claim.
 
 Fast social replies use category-specific rotation rather than independent random selection. The production library contains hundreds of wake, check-in, identity, gratitude, closing, time/date, capability, status, planning, and clarification variants. A persisted seven-day history excludes recently used variants until the unused replies in that category are exhausted, so service restarts do not immediately reset the rotation.
+
+Whole-home count questions are resolved before named-entity clarification. For example, `How many cameras do I have?` counts consolidated camera devices and reports unavailable cameras separately instead of asking which individual camera was intended.
 
 The VM dashboard now has a dedicated **Home Assistant** view showing explicit and natural-language entity coverage, common phrase families, stale-state counts, answer scoring, conflict visibility, and the active Jarvis response contract. See [Jarvis Home Assistant phrase coverage](JARVIS_PHRASE_COVERAGE.md) for the full phrase matrix and interpretation guidance.
 

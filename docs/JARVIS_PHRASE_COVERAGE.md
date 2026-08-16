@@ -6,13 +6,13 @@ Jarvis accepts ordinary Home Assistant questions without requiring people to kno
 
 | Family | Example phrases | Expected behavior |
 | --- | --- | --- |
-| Named entity state | `Is the right garage door open?`, `What is the office temperature?` | Resolve the best domain-compatible entity and report its live state. |
+| Named entity state | `Is the right garage door open?`, `What is the office temperature?` | Resolve the best domain-compatible entity and report its live state without a forced personality suffix. |
 | Room conditions | `How warm is the living room?`, `What is the basement humidity?` | Prefer temperature, humidity, air-quality, or other matching sensor classes in that room. |
 | Lights | `Which lights are on?`, `Are any lights still on?` | Summarize matching lights across the home. |
 | Doors, locks, and covers | `Is the front door locked?`, `Are any doors open?` | Report state; call out unavailable or conflicting entities instead of guessing. |
 | Batteries | `Are any batteries low?`, `How much charge does the garage sensor have?` | Find battery-class sensors and summarize low or named-device charge. |
 | Updates | `Are any updates available?`, `What needs updating?` | Summarize update entities currently reporting an available update. |
-| Media | `What is the family room TV playing?`, `Is the speaker on?` | Report current media-player state and useful title/source attributes. |
+| Cameras and media | `How many cameras do I have?`, `What is the family room TV playing?` | Count consolidated camera devices or report a named media entity without treating a whole-home count as an ambiguous device request. |
 | Climate | `What is the thermostat set to?`, `Is the heat running?` | Report HVAC mode, current temperature, or target temperature when available. |
 | Presence | `Is anyone home?`, `Where is my phone?` | Summarize authorized person or device-tracker state without inventing location detail. |
 | Weather | `What is the weather at home?`, `Will it rain today?` | Use the current Home Assistant weather entity and available forecast attributes. |
@@ -49,7 +49,9 @@ This separation matters. A 100% explicit-ID audit proves that every entity can b
 - Model-backed replies use the same Jarvis persona as deterministic replies.
 - Short voice answers lead with the result and avoid generic assistant filler.
 - Direct address uses `JARVIS_USER_NAME`; formal honorifics are not the default.
-- Sarcasm is conversational and noticeable, but never cruel, personal, or allowed to obscure a safety warning or factual state.
+- The configured name is occasional direct address, not a compulsory ending on every response.
+- Sarcasm is conversational but optional. It is never cruel, personal, repeated as a canned suffix, or allowed to obscure a safety warning or factual state.
+- Travel, steps, counts, temperatures, and other routine facts normally receive a natural one-sentence answer.
 
 ## Dashboard
 

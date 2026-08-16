@@ -105,7 +105,7 @@ export function getCommonAssistantReply(prompt, now = new Date(), options = {}) 
     return personalizeReply("{name}, I can check your home, weather, calendar, health, travel, routes, files, and local systems; I will also tell you plainly when a capability is not connected. Competence first, theatre second.", options);
   }
   if (/^(thanks|thank you|much appreciated|cheers)\b/.test(normalized)) {
-    return personalizeReply("You are welcome, sir. Order restored with minimal ceremony.", options);
+    return personalizeReply("You're welcome, {name}.", options);
   }
   if (/\b(good night|goodnight|go to sleep|that is all|dismissed)\b/.test(normalized)) {
     return personalizeReply("Good night, sir. I will keep watch while the humans attempt scheduled maintenance.", options);
@@ -176,7 +176,7 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
     if (conflict) {
       const details = conflict.map((state) => `${friendlyName(state)} reports ${formatEntityValue(state)}`);
       return {
-        reply: personalizeReply(`Home Assistant has conflicting states for ${canonicalDeviceKey(conflict[0])}: ${joinSpeechList(details)}. I will not guess, sir.`, options),
+        reply: personalizeReply(`Home Assistant has conflicting states for ${canonicalDeviceKey(conflict[0])}: ${joinSpeechList(details)}. I won't guess.`, options),
         states: conflict,
         kind: "conflicting_entity_states"
       };
@@ -189,7 +189,7 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
   const explicit = /\b[a-z_]+\.[a-z0-9_]+\b/i.test(String(prompt || ""));
   if (isActionRequest(normalized)) {
     return {
-      reply: personalizeReply("I can verify that device, but control is not enabled on this Assist route yet. Even brilliance requires permission, sir.", options),
+      reply: personalizeReply("I can verify that device, but control isn't enabled on this Assist route, so I haven't changed it.", options),
       states: [ranked[0].state],
       kind: "control_unavailable"
     };
@@ -203,7 +203,7 @@ export function getHomeAssistantVoiceResponse(prompt, states, options = {}) {
   if (!explicit && second && Math.abs(top.score - second.score) < 0.5 && canonicalDeviceKey(top.state) !== canonicalDeviceKey(second.state)) {
     const names = ranked.slice(0, 3).map(({ state }) => friendlyName(state));
     return {
-      reply: personalizeReply(`I found more than one plausible match: ${joinSpeechList(names)}. Which one did you mean, sir? Precision dislikes guessing.`, options),
+      reply: personalizeReply(`I found more than one plausible match: ${joinSpeechList(names)}. Which one did you mean?`, options),
       states: ranked.slice(0, 3).map(({ state }) => state),
       kind: "clarification"
     };
@@ -241,6 +241,19 @@ export function auditHomeAssistantLanguageCoverage(states) {
 }
 
 function getAggregateResponse(normalized, states) {
+  if (/\bhow many (?:home |house |security )?cameras?\b|\b(?:number|count) of (?:home |house |security )?cameras?\b/.test(normalized)) {
+    const cameras = consolidateEntities(states.filter((state) => entityMetadata(state).domain === "camera")).states;
+    const unavailable = cameras.filter((state) => ["unavailable", "unknown"].includes(String(state.state).toLowerCase()));
+    const unavailableNote = unavailable.length
+      ? ` ${unavailable.length === 1 ? "One is" : `${unavailable.length} are`} currently unavailable.`
+      : "";
+    return {
+      reply: `You have ${cameras.length} ${pluralize("camera", cameras.length)} in Home Assistant.${unavailableNote}`,
+      states: cameras.slice(0, 8),
+      kind: "camera_count"
+    };
+  }
+
   const requests = [
     { kind: "lights_on", pattern: /\b(any|which|what|how many|list|show).{0,20}\b(lights?|lamps?)\b.{0,16}\b(on|active)\b|\bare (?:the )?(?:lights|lamps) on\b/, predicate: (meta) => isLight(meta), active: (state) => stateIs(state, "on"), noun: "light", activeWord: "on" },
     { kind: "doors_open", pattern: /\b(any|which|what|how many|list|show).{0,20}\bdoors?\b.{0,16}\b(open|opened)\b|\bare (?:the )?doors open\b/, predicate: (meta) => isDoor(meta), active: isOpen, noun: "door", activeWord: "open" },
@@ -265,8 +278,8 @@ function getAggregateResponse(normalized, states) {
     ? ` ${consolidated.conflicts.length} ${pluralize(request.noun, consolidated.conflicts.length)} had conflicting states.`
     : "";
   const reply = active.length
-    ? `${active.length} ${pluralize(request.noun, active.length)} ${active.length === 1 ? "is" : "are"} ${request.activeWord}: ${details}.${unavailableNote}${conflictNote} The house has been thoroughly interrogated, sir.`
-    : `No available ${pluralize(request.noun, 2)} are ${request.activeWord}.${unavailableNote}${conflictNote} A rare outbreak of order, sir.`;
+    ? `${active.length} ${pluralize(request.noun, active.length)} ${active.length === 1 ? "is" : "are"} ${request.activeWord}: ${details}.${unavailableNote}${conflictNote}`
+    : `No available ${pluralize(request.noun, 2)} are ${request.activeWord}.${unavailableNote}${conflictNote}`;
   return { reply, states: active.slice(0, 8), kind: request.kind };
 }
 
@@ -276,22 +289,22 @@ function formatJarvisEntityAnswer(state, normalizedPrompt, options = {}) {
   const raw = String(state.state ?? "unknown");
   const lower = raw.toLowerCase();
   if (["unknown", "unavailable"].includes(lower)) {
-    return `${name} is currently ${lower} in Home Assistant. Even I require a cooperative device, sir.`;
+    return `${name} is currently ${lower} in Home Assistant. I can't verify more until it reports back.`;
   }
-  if (meta.domain === "lock") return `${name} is ${lower}, sir. The lock has been properly accounted for.`;
-  if (isDoor(meta)) return `${name} is ${isOpen(state) ? "open" : lower === "on" ? "open" : lower === "off" ? "closed" : lower}, sir. No guesswork required.`;
+  if (meta.domain === "lock") return `${name} is ${lower}.`;
+  if (isDoor(meta)) return `${name} is ${isOpen(state) ? "open" : lower === "on" ? "open" : lower === "off" ? "closed" : lower}.`;
   if (meta.domain === "update") return lower === "on"
-    ? `${name} has an update available, sir. Progress has filed the appropriate paperwork.`
-    : `${name} is up to date. One less thing demanding attention.`;
-  if (meta.domain === "automation") return `${name} is ${lower === "on" ? "enabled" : lower === "off" ? "disabled" : lower}, sir. The machinery remains obedient.`;
+    ? `${name} has an update available.`
+    : `${name} is up to date.`;
+  if (meta.domain === "automation") return `${name} is ${lower === "on" ? "enabled" : lower === "off" ? "disabled" : lower}.`;
   if (meta.domain === "person" || meta.domain === "device_tracker") {
     const location = lower === "not_home" ? "away" : lower;
-    return `${name} is ${location}, according to the latest Home Assistant location. Surveillance, but make it useful.`;
+    return `${name} is ${location}, according to the latest Home Assistant location.`;
   }
   if (meta.domain === "media_player") {
     const title = state.attributes?.media_title;
-    if (lower === "playing" && title) return `${name} is playing ${title}, sir. Mystery eliminated.`;
-    return `${name} is ${lower}, sir. The entertainment estate has reported in.`;
+    if (lower === "playing" && title) return `${name} is playing ${title}.`;
+    return `${name} is ${lower}.`;
   }
   if (meta.domain === "climate") {
     const current = state.attributes?.current_temperature;
@@ -299,30 +312,30 @@ function formatJarvisEntityAnswer(state, normalizedPrompt, options = {}) {
     const pieces = [`${name} is ${lower}`];
     if (current !== undefined) pieces.push(`the current temperature is ${formatNumber(current)}${formatUnit(state.attributes?.temperature_unit || "")}`);
     if (target !== undefined) pieces.push(`the target is ${formatNumber(target)}${formatUnit(state.attributes?.temperature_unit || "")}`);
-    return `${pieces.join(", and ")}. Climate bureaucracy, neatly summarized.`;
+    return `${pieces.join(", and ")}.`;
   }
   if (meta.domain === "binary_sensor") {
     const described = describeBinaryState(meta.deviceClass, lower);
-    return `${name} is ${described}, sir. The sensor has testified.`;
+    return `${name} is ${described}.`;
   }
   if (meta.domain === "todo" && Number.isFinite(Number(raw))) {
     const count = Number(raw);
-    return `${name} has ${count} ${count === 1 ? "item" : "items"}. Administrative suspense resolved.`;
+    return `${name} has ${count} ${count === 1 ? "item" : "items"}.`;
   }
   if (meta.deviceClass === "timestamp" || /^\d{4}-\d{2}-\d{2}t/i.test(raw)) {
     const stamp = new Date(raw);
     if (!Number.isNaN(stamp.getTime())) {
       const formatted = new Intl.DateTimeFormat("en-CA", { timeZone: options.timeZone || "UTC", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).format(stamp);
-      return `${name} is ${formatted}, sir. Time has been translated into something civilized.`;
+      return `${name} is ${formatted}.`;
     }
   }
   const value = formatEntityValue(state);
-  if (meta.domain === "camera") return `${name} is ${lower}, sir. The camera has reported in without embellishment.`;
-  if (meta.domain === "switch" || meta.domain === "input_boolean") return `${name} is ${lower}, sir. The circuitry remains admirably literal.`;
-  if (/\b(temperature|temp)\b/.test(normalizedPrompt) || meta.deviceClass === "temperature") return `${name} reads ${value}. A pleasingly exact answer, sir.`;
-  if (/\b(humidity|humid)\b/.test(normalizedPrompt) || meta.deviceClass === "humidity") return `${name} reads ${value}. The atmosphere has submitted its report.`;
-  if (/\b(battery|charge)\b/.test(normalizedPrompt) || meta.deviceClass === "battery") return `${name} is at ${value}. The electrons have been counted, sir.`;
-  return `${name} is ${value}, sir. Home Assistant has supplied the evidence.`;
+  if (meta.domain === "camera") return `${name} is ${lower}.`;
+  if (meta.domain === "switch" || meta.domain === "input_boolean") return `${name} is ${lower}.`;
+  if (/\b(temperature|temp)\b/.test(normalizedPrompt) || meta.deviceClass === "temperature") return `${name} reads ${value}.`;
+  if (/\b(humidity|humid)\b/.test(normalizedPrompt) || meta.deviceClass === "humidity") return `${name} reads ${value}.`;
+  if (/\b(battery|charge)\b/.test(normalizedPrompt) || meta.deviceClass === "battery") return `${name} is at ${value}.`;
+  return `${name} is ${value}.`;
 }
 
 function entityMetadata(state) {
