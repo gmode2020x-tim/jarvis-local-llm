@@ -25,6 +25,8 @@ import ca.gmode.triprecorder.R
 import ca.gmode.triprecorder.data.AppDatabase
 import ca.gmode.triprecorder.data.PhoneSnapshot
 import ca.gmode.triprecorder.data.RecordingRepository
+import ca.gmode.triprecorder.settings.AutoRecordingSettings
+import ca.gmode.triprecorder.settings.AutoRecordingStateStore
 import ca.gmode.triprecorder.sync.SyncScheduler
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -96,10 +98,12 @@ class TrackingService : LifecycleService() {
         runCatching {
             locationManager.registerGnssStatusCallback(gnssCallback, Handler(Looper.getMainLooper()))
         }
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, LOCATION_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(MIN_LOCATION_INTERVAL_MS)
-            .setMinUpdateDistanceMeters(MIN_LOCATION_DISTANCE_METERS)
-            .setMaxUpdateDelayMillis(MAX_LOCATION_DELAY_MS)
+        val recordingConfig = AutoRecordingSettings(this).read()
+        val intervalMs = recordingConfig.locationIntervalSeconds * 1_000L
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
+            .setMinUpdateIntervalMillis((intervalMs / 2).coerceAtLeast(1_000L))
+            .setMinUpdateDistanceMeters(recordingConfig.minimumDistanceMeters.toFloat())
+            .setMaxUpdateDelayMillis((intervalMs * 2).coerceAtLeast(10_000L))
             .build()
         fusedLocation.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
         updateNotification("Waiting for a GPS fix")
@@ -123,7 +127,14 @@ class TrackingService : LifecycleService() {
 
     private fun stopTripAndService() {
         lifecycleScope.launch {
+            val stoppedTripId = currentTripId
             repository.stopTrip()
+            AutoRecordingStateStore(this@TrackingService).let { state ->
+                if (state.activeAutoTripId == stoppedTripId) {
+                    state.activeAutoTripId = null
+                    state.updateStatus("Automatic trip stopped manually — waiting for the next departure")
+                }
+            }
             SyncScheduler.enqueue(this@TrackingService)
             stopTrackingResources()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -203,10 +214,6 @@ class TrackingService : LifecycleService() {
     companion object {
         private const val CHANNEL_ID = "gmode_trip_recording"
         private const val NOTIFICATION_ID = 2101
-        private const val LOCATION_INTERVAL_MS = 5_000L
-        private const val MIN_LOCATION_INTERVAL_MS = 2_000L
-        private const val MAX_LOCATION_DELAY_MS = 10_000L
-        private const val MIN_LOCATION_DISTANCE_METERS = 5f
         private const val ACTION_START = "ca.gmode.triprecorder.START"
         private const val ACTION_STOP = "ca.gmode.triprecorder.STOP"
         private const val EXTRA_TRIP_ID = "trip_id"
@@ -220,6 +227,10 @@ class TrackingService : LifecycleService() {
 
         fun stop(context: Context) {
             context.startService(Intent(context, TrackingService::class.java).setAction(ACTION_STOP))
+        }
+
+        fun stopImmediately(context: Context) {
+            context.stopService(Intent(context, TrackingService::class.java))
         }
     }
 }

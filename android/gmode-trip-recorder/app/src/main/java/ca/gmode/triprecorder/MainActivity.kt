@@ -1,6 +1,7 @@
 package ca.gmode.triprecorder
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -25,14 +26,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import ca.gmode.triprecorder.auto.AutoRecordingManager
 import ca.gmode.triprecorder.data.AppDatabase
 import ca.gmode.triprecorder.data.RecordingRepository
+import ca.gmode.triprecorder.settings.AutoRecordingConfig
+import ca.gmode.triprecorder.settings.AutoRecordingSettings
+import ca.gmode.triprecorder.settings.AutoRecordingStateStore
 import ca.gmode.triprecorder.settings.SecureSettings
 import ca.gmode.triprecorder.sync.SyncScheduler
 import ca.gmode.triprecorder.sync.SyncStatusStore
 import ca.gmode.triprecorder.tracking.TrackingService
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -46,6 +56,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var repository: RecordingRepository
     private lateinit var secureSettings: SecureSettings
     private lateinit var syncStatus: SyncStatusStore
+    private lateinit var autoSettings: AutoRecordingSettings
+    private lateinit var autoState: AutoRecordingStateStore
+    private lateinit var autoManager: AutoRecordingManager
+    private lateinit var fusedLocation: FusedLocationProviderClient
 
     private lateinit var tripName: EditText
     private lateinit var tripType: Spinner
@@ -61,7 +75,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gauge: DashboardGaugeView
     private lateinit var startButton: MaterialButton
     private lateinit var stopButton: MaterialButton
+    private lateinit var autoEnabledSwitch: MaterialSwitch
+    private lateinit var homeLocationStatus: TextView
+    private lateinit var autoStatus: TextView
+    private lateinit var autoPermissionStatus: TextView
+    private lateinit var homeRadiusInput: EditText
+    private lateinit var returnDwellInput: EditText
+    private lateinit var locationIntervalInput: EditText
+    private lateinit var minimumDistanceInput: EditText
+    private lateinit var autoTripType: Spinner
+    private var pendingHomeLatitude: Double? = null
+    private var pendingHomeLongitude: Double? = null
     private var startAfterPermission = false
+    private var captureHomeAfterPermission = false
+    private var saveAutoAfterPermission = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -69,7 +96,11 @@ class MainActivity : AppCompatActivity() {
         val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (locationGranted && startAfterPermission) startRecording()
+        if (locationGranted && captureHomeAfterPermission) captureHomeLocation()
+        if (locationGranted && saveAutoAfterPermission) saveAutoSettings()
         startAfterPermission = false
+        captureHomeAfterPermission = false
+        saveAutoAfterPermission = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,9 +108,21 @@ class MainActivity : AppCompatActivity() {
         repository = RecordingRepository(AppDatabase.get(this).tripDao())
         secureSettings = SecureSettings(this)
         syncStatus = SyncStatusStore(this)
+        autoSettings = AutoRecordingSettings(this)
+        autoState = AutoRecordingStateStore(this)
+        autoManager = AutoRecordingManager(this)
+        fusedLocation = LocationServices.getFusedLocationProviderClient(this)
         setContentView(createContent())
         bindActions()
         refreshContinuously()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::autoEnabledSwitch.isInitialized) {
+            refreshAutoUi()
+            if (autoSettings.read().enabled) autoManager.refreshRegistration { _, _ -> refreshAutoUi() }
+        }
     }
 
     private fun createContent(): ScrollView {
@@ -133,6 +176,58 @@ class MainActivity : AppCompatActivity() {
         stopButton = dashboardButton("STOP + SYNC", filled = false).apply { isEnabled = false }
         content.addView(card("NEW TRIP", tripName, tripType, horizontalButtons(startButton, stopButton)))
 
+        val automaticConfig = autoSettings.read()
+        pendingHomeLatitude = automaticConfig.homeLatitude
+        pendingHomeLongitude = automaticConfig.homeLongitude
+        autoEnabledSwitch = MaterialSwitch(this).apply {
+            text = "START WHEN I LEAVE HOME"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            isChecked = automaticConfig.enabled
+            thumbTintList = checkedStateList(ORANGE, Color.parseColor("#777777"))
+            trackTintList = checkedStateList(Color.parseColor("#5B2A09"), Color.parseColor("#333333"))
+        }
+        autoStatus = text(autoState.status(), 13f, Color.WHITE, bold = true)
+        homeLocationStatus = text(homeLocationLabel(), 12f, MUTED)
+        autoPermissionStatus = text("", 12f, MUTED)
+        homeRadiusInput = numberInput(automaticConfig.homeRadiusMeters)
+        returnDwellInput = numberInput(automaticConfig.returnDwellMinutes)
+        locationIntervalInput = numberInput(automaticConfig.locationIntervalSeconds)
+        minimumDistanceInput = numberInput(automaticConfig.minimumDistanceMeters)
+        autoTripType = Spinner(this).apply {
+            adapter = tripTypeAdapter()
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            setSelection(TRIP_TYPE_VALUES.indexOf(automaticConfig.tripType).coerceAtLeast(0))
+        }
+        val useCurrentLocation = dashboardButton("USE CURRENT LOCATION", filled = false)
+        val saveAutomatic = dashboardButton("SAVE AUTO SETTINGS", filled = true)
+        val locationPermission = dashboardButton("LOCATION PERMISSION", filled = false)
+        content.addView(
+            card(
+                "AUTOMATIC RECORDING",
+                autoEnabledSwitch,
+                autoStatus,
+                homeLocationStatus,
+                useCurrentLocation,
+                horizontalViews(
+                    labeledInput("HOME RADIUS (M)", homeRadiusInput),
+                    labeledInput("RETURN DELAY (MIN)", returnDwellInput),
+                ),
+                horizontalViews(
+                    labeledInput("GPS INTERVAL (SEC)", locationIntervalInput),
+                    labeledInput("MIN MOVEMENT (M)", minimumDistanceInput),
+                ),
+                labeledInput("AUTOMATIC TRIP TYPE", autoTripType),
+                horizontalButtons(saveAutomatic, locationPermission),
+                autoPermissionStatus,
+                text(
+                    "Leave the home zone to start. Returning inside it for the delay above stops only an automatically started trip. Manual trips remain under manual control.",
+                    11f,
+                    Color.parseColor("#8F8F8F"),
+                ),
+            ),
+        )
+
         baseUrl = editText("Home Assistant URL").apply { setText(secureSettings.baseUrl) }
         token = editText(if (secureSettings.hasToken()) "Access token saved — leave blank to keep it" else "Long-lived access token").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -157,7 +252,7 @@ class MainActivity : AppCompatActivity() {
         content.addView(card("SYSTEM", horizontalButtons(connectionToggle, battery), connectionBody))
         content.addView(
             text(
-                "GPS 5 sec / 5 m  •  BAROMETER  •  ACCELERATION  •  GYROSCOPE\nLocal-first recording; automatic Home Assistant retry.",
+                "GPS ${automaticConfig.locationIntervalSeconds} sec / ${automaticConfig.minimumDistanceMeters} m  •  BAROMETER  •  ACCELERATION  •  GYROSCOPE\nLocal-first recording; automatic Home Assistant retry.",
                 11f,
                 Color.parseColor("#777777"),
             ).apply { gravity = Gravity.CENTER }.withBottom(dp(6)),
@@ -171,6 +266,17 @@ class MainActivity : AppCompatActivity() {
         battery.setOnClickListener {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
+        useCurrentLocation.setOnClickListener {
+            if (hasFineLocation()) {
+                captureHomeLocation()
+            } else {
+                captureHomeAfterPermission = true
+                requestForegroundLocationPermissions()
+            }
+        }
+        saveAutomatic.setOnClickListener { saveAutoSettings() }
+        locationPermission.setOnClickListener { openAppLocationSettings() }
+        refreshAutoUi()
         return scroll
     }
 
@@ -180,12 +286,7 @@ class MainActivity : AppCompatActivity() {
                 startRecording()
             } else {
                 startAfterPermission = true
-                val permissions = buildList {
-                    add(Manifest.permission.ACCESS_FINE_LOCATION)
-                    add(Manifest.permission.ACCESS_COARSE_LOCATION)
-                    if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-                }
-                permissionLauncher.launch(permissions.toTypedArray())
+                requestForegroundLocationPermissions()
             }
         }
         stopButton.setOnClickListener { TrackingService.stop(this) }
@@ -199,6 +300,111 @@ class MainActivity : AppCompatActivity() {
             SyncScheduler.enqueue(this@MainActivity)
             tripName.text.clear()
         }
+    }
+
+    private fun requestForegroundLocationPermissions() {
+        val permissions = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun captureHomeLocation() {
+        if (!hasFineLocation()) {
+            captureHomeAfterPermission = true
+            requestForegroundLocationPermissions()
+            return
+        }
+        homeLocationStatus.text = "Getting a precise home location…"
+        val cancellation = CancellationTokenSource()
+        fusedLocation.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellation.token)
+            .addOnSuccessListener { location ->
+                if (location == null) {
+                    homeLocationStatus.text = "No GPS fix yet — move near a window and try again"
+                    return@addOnSuccessListener
+                }
+                pendingHomeLatitude = location.latitude
+                pendingHomeLongitude = location.longitude
+                homeLocationStatus.text = homeLocationLabel(location.accuracy)
+                Toast.makeText(this, "Home location captured — save automatic settings", Toast.LENGTH_LONG).show()
+            }
+            .addOnFailureListener { error ->
+                homeLocationStatus.text = "Could not get location: ${error.message ?: "try again"}"
+            }
+    }
+
+    private fun saveAutoSettings() {
+        if (autoEnabledSwitch.isChecked && !hasFineLocation()) {
+            saveAutoAfterPermission = true
+            requestForegroundLocationPermissions()
+            return
+        }
+        if (autoEnabledSwitch.isChecked && (pendingHomeLatitude == null || pendingHomeLongitude == null)) {
+            Toast.makeText(this, "Use current location before enabling automatic recording", Toast.LENGTH_LONG).show()
+            return
+        }
+        val config = AutoRecordingConfig(
+            enabled = autoEnabledSwitch.isChecked,
+            homeLatitude = pendingHomeLatitude,
+            homeLongitude = pendingHomeLongitude,
+            homeRadiusMeters = homeRadiusInput.intValue(AutoRecordingConfig.DEFAULT_HOME_RADIUS_METERS),
+            returnDwellMinutes = returnDwellInput.intValue(AutoRecordingConfig.DEFAULT_RETURN_DWELL_MINUTES),
+            locationIntervalSeconds = locationIntervalInput.intValue(AutoRecordingConfig.DEFAULT_LOCATION_INTERVAL_SECONDS),
+            minimumDistanceMeters = minimumDistanceInput.intValue(AutoRecordingConfig.DEFAULT_MINIMUM_DISTANCE_METERS),
+            tripType = TRIP_TYPE_VALUES[autoTripType.selectedItemPosition],
+        ).normalized()
+        autoSettings.save(config)
+        populateAutoInputs(config)
+        if (config.enabled && !autoManager.hasBackgroundLocation()) {
+            autoState.updateStatus("Saved — choose Allow all the time for automatic departures")
+            refreshAutoUi()
+            Toast.makeText(this, "In Permissions > Location, choose Allow all the time", Toast.LENGTH_LONG).show()
+            openAppLocationSettings()
+            return
+        }
+        autoManager.refreshRegistration { _, message ->
+            runOnUiThread {
+                refreshAutoUi()
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun openAppLocationSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+            },
+        )
+    }
+
+    private fun refreshAutoUi() {
+        val config = autoSettings.read()
+        autoEnabledSwitch.isChecked = config.enabled
+        autoStatus.text = autoState.status()
+        autoPermissionStatus.text = when {
+            !config.enabled -> "Optional — automatic recording is disabled"
+            !autoManager.hasFineLocation() -> "Precise location permission is required"
+            !autoManager.hasBackgroundLocation() -> "Not armed — set Location to Allow all the time"
+            else -> "Location access is ready for automatic departures"
+        }
+    }
+
+    private fun populateAutoInputs(config: AutoRecordingConfig) {
+        homeRadiusInput.setText(config.homeRadiusMeters.toString())
+        returnDwellInput.setText(config.returnDwellMinutes.toString())
+        locationIntervalInput.setText(config.locationIntervalSeconds.toString())
+        minimumDistanceInput.setText(config.minimumDistanceMeters.toString())
+    }
+
+    private fun homeLocationLabel(accuracyMeters: Float? = null): String {
+        val latitude = pendingHomeLatitude ?: return "Home location is not set"
+        val longitude = pendingHomeLongitude ?: return "Home location is not set"
+        val accuracy = accuracyMeters?.let { " • GPS ±${it.roundToInt()} m" }.orEmpty()
+        return "Home: %.6f, %.6f%s".format(latitude, longitude, accuracy)
     }
 
     private fun saveConnection() {
@@ -270,6 +476,7 @@ class MainActivity : AppCompatActivity() {
                     else -> "HA READY"
                 }
                 setChip(homeAssistantChip, homeAssistantLabel, syncGood)
+                autoStatus.text = autoState.status()
                 dashboardClock.text = LocalTime.now().format(TIME_FORMAT)
                 delay(1_000)
             }
@@ -313,6 +520,12 @@ class MainActivity : AppCompatActivity() {
                 if (index < views.lastIndex) marginEnd = dp(6)
             })
         }
+    }
+
+    private fun labeledInput(label: String, input: android.view.View): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(text(label, 9.5f, ORANGE, bold = true).withBottom(dp(3)))
+        addView(input)
     }
 
     private fun statusChip(label: String): TextView = text(label, 9.5f, MUTED, bold = true).apply {
@@ -382,6 +595,14 @@ class MainActivity : AppCompatActivity() {
         intArrayOf(enabled, disabled),
     )
 
+    private fun checkedStateList(checked: Int, unchecked: Int): ColorStateList = ColorStateList(
+        arrayOf(
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(-android.R.attr.state_checked),
+        ),
+        intArrayOf(checked, unchecked),
+    )
+
     private fun editText(hintText: String): EditText = EditText(this).apply {
         hint = hintText
         setTextColor(Color.WHITE)
@@ -390,6 +611,14 @@ class MainActivity : AppCompatActivity() {
         setSingleLine(true)
         setPadding(dp(12), dp(10), dp(12), dp(10))
     }
+
+    private fun numberInput(value: Int): EditText = editText("").apply {
+        inputType = InputType.TYPE_CLASS_NUMBER
+        setText(value.toString())
+        selectAll()
+    }
+
+    private fun EditText.intValue(fallback: Int): Int = text.toString().trim().toIntOrNull() ?: fallback
 
     private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {
         text = value
