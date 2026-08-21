@@ -53,8 +53,10 @@ Requirements:
 Build and test:
 
 ```powershell
-.\gradlew.bat testDebugUnitTest lintDebug assembleRelease
+.\gradlew.bat testDebugUnitTest lintDebug connectedDebugAndroidTest assembleRelease
 ```
+
+`connectedDebugAndroidTest` uses a running emulator/device and protects the Room parent/child upsert behavior that keeps recorded points durable. `tools/mock_ha_server.mjs` provides a local authenticated upload target for end-to-end synchronization tests without writing test trips into the production Home Assistant instance.
 
 Release 1 is a private sideload build signed with this workstation's Android debug signing key. Back up `%USERPROFILE%\.android\debug.keystore` before relying on in-place upgrades. A public release should use a dedicated, backed-up production keystore.
 

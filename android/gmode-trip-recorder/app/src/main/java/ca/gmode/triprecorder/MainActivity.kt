@@ -126,11 +126,7 @@ class MainActivity : AppCompatActivity() {
 
         tripName = editText("Optional trip name")
         tripType = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                TRIP_TYPE_LABELS,
-            )
+            adapter = tripTypeAdapter()
             backgroundTintList = ColorStateList.valueOf(ORANGE)
         }
         startButton = dashboardButton("START TRIP", filled = true)
@@ -347,15 +343,44 @@ class MainActivity : AppCompatActivity() {
         insetTop = 0
         insetBottom = 0
         if (filled) {
-            backgroundTintList = ColorStateList.valueOf(ORANGE)
-            setTextColor(Color.BLACK)
+            backgroundTintList = stateList(ORANGE, Color.parseColor("#3A210D"))
+            setTextColor(stateList(Color.BLACK, Color.parseColor("#777777")))
         } else {
-            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#232323"))
-            strokeColor = ColorStateList.valueOf(ORANGE)
+            backgroundTintList = stateList(Color.parseColor("#232323"), Color.parseColor("#171717"))
+            strokeColor = stateList(ORANGE, Color.parseColor("#444444"))
             strokeWidth = dp(1)
-            setTextColor(Color.WHITE)
+            setTextColor(stateList(Color.WHITE, Color.parseColor("#777777")))
         }
     }
+
+    private fun tripTypeAdapter(): ArrayAdapter<String> = object : ArrayAdapter<String>(
+        this,
+        android.R.layout.simple_spinner_item,
+        TRIP_TYPE_LABELS,
+    ) {
+        override fun getView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View =
+            spinnerRow(position, dropdown = false)
+
+        override fun getDropDownView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View =
+            spinnerRow(position, dropdown = true)
+
+        private fun spinnerRow(position: Int, dropdown: Boolean): TextView = TextView(this@MainActivity).apply {
+            text = getItem(position)
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(if (dropdown) 14 else 10), dp(14), dp(if (dropdown) 14 else 10))
+            setBackgroundColor(if (dropdown) Color.parseColor("#232323") else Color.TRANSPARENT)
+        }
+    }
+
+    private fun stateList(enabled: Int, disabled: Int): ColorStateList = ColorStateList(
+        arrayOf(
+            intArrayOf(android.R.attr.state_enabled),
+            intArrayOf(-android.R.attr.state_enabled),
+        ),
+        intArrayOf(enabled, disabled),
+    )
 
     private fun editText(hintText: String): EditText = EditText(this).apply {
         hint = hintText
