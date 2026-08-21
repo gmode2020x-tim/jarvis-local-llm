@@ -2,7 +2,9 @@
 
 Private Android application for offline-first GPS and Samsung phone telemetry. Recording never depends on Home Assistant connectivity: points are written to Room first and synchronized in authenticated, idempotent batches whenever a network becomes available.
 
-## Release 1 capabilities
+## Current capabilities
+
+- Automotive dashboard inspired by Tim's reference: orange-on-black instrument styling, live central speed gauge, glanceable GPS/queue/Home Assistant indicators, and large driving-friendly controls.
 
 - Explicit Start Trip / Stop Trip workflow with Street, Off road, Snow, and Water classifications.
 - Foreground high-accuracy GPS recording every 5 seconds or 5 metres.
