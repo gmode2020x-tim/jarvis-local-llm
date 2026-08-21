@@ -10,6 +10,8 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
+import ca.gmode.triprecorder.settings.AppearanceSettings
+import ca.gmode.triprecorder.settings.DashboardPalette
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -24,6 +26,7 @@ class DashboardGaugeView @JvmOverloads constructor(
     private val bounds = RectF()
     private val needlePath = Path()
     private var dialGradient: RadialGradient? = null
+    private var palette: DashboardPalette = AppearanceSettings.PRESETS.first()
 
     private var isRecording = false
     private var speedKph = 0
@@ -31,6 +34,12 @@ class DashboardGaugeView @JvmOverloads constructor(
     private var duration = "0:00"
     private var accuracyMeters: Int? = null
     private var tripTitle = "READY"
+
+    fun setPalette(palette: DashboardPalette) {
+        this.palette = palette
+        rebuildGradient()
+        invalidate()
+    }
 
     fun setTelemetry(
         recording: Boolean,
@@ -60,9 +69,7 @@ class DashboardGaugeView @JvmOverloads constructor(
         val cx = width / 2f
         val cy = height / 2f
         val radius = min(width, height) * 0.43f
-        val orange = Color.rgb(255, 121, 0)
-        val mutedOrange = Color.rgb(116, 57, 10)
-        val activeColor = if (isRecording) orange else Color.rgb(110, 110, 110)
+        val activeColor = if (isRecording) palette.accent else palette.muted
 
         paint.style = Paint.Style.FILL
         paint.shader = dialGradient
@@ -71,7 +78,7 @@ class DashboardGaugeView @JvmOverloads constructor(
 
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = dp(12f)
-        paint.color = Color.rgb(47, 47, 47)
+        paint.color = palette.outline
         canvas.drawCircle(cx, cy, radius - dp(5f), paint)
         paint.strokeWidth = dp(2f)
         paint.color = activeColor
@@ -80,7 +87,7 @@ class DashboardGaugeView @JvmOverloads constructor(
         bounds.set(cx - radius + dp(24f), cy - radius + dp(24f), cx + radius - dp(24f), cy + radius - dp(24f))
         paint.strokeCap = Paint.Cap.BUTT
         paint.strokeWidth = dp(11f)
-        paint.color = if (isRecording) mutedOrange else Color.rgb(43, 43, 43)
+        paint.color = if (isRecording) palette.activeSurface else palette.inactiveSurface
         canvas.drawArc(bounds, 135f, 270f, false, paint)
         paint.color = activeColor
         val sweep = (speedKph.coerceAtMost(MAX_SPEED).toFloat() / MAX_SPEED) * 270f
@@ -106,7 +113,7 @@ class DashboardGaugeView @JvmOverloads constructor(
         )
 
         paint.style = Paint.Style.FILL
-        paint.color = if (isRecording) orange else Color.rgb(95, 95, 95)
+        paint.color = if (isRecording) palette.accent else palette.muted
         canvas.drawCircle(cx, cy + radius * 0.84f, dp(4f), paint)
         drawCentered(
             canvas,
@@ -161,7 +168,7 @@ class DashboardGaugeView @JvmOverloads constructor(
         paint.style = Paint.Style.FILL
         paint.color = color
         canvas.drawPath(needlePath, paint)
-        paint.color = Color.rgb(35, 35, 35)
+        paint.color = palette.panel
         canvas.drawCircle(cx, cy, dp(10f), paint)
         paint.color = color
         canvas.drawCircle(cx, cy, dp(4f), paint)
@@ -193,6 +200,11 @@ class DashboardGaugeView @JvmOverloads constructor(
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
+        rebuildGradient()
+    }
+
+    private fun rebuildGradient() {
+        if (width == 0 || height == 0) return
         val cx = width / 2f
         val cy = height / 2f
         val radius = min(width, height) * 0.43f
@@ -200,7 +212,7 @@ class DashboardGaugeView @JvmOverloads constructor(
             cx,
             cy,
             radius,
-            intArrayOf(Color.rgb(27, 27, 27), Color.rgb(10, 10, 10), Color.BLACK),
+            intArrayOf(palette.dialCenter, palette.dialMiddle, palette.background),
             floatArrayOf(0f, 0.74f, 1f),
             Shader.TileMode.CLAMP,
         )

@@ -25,6 +25,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import ca.gmode.triprecorder.auto.AutoRecordingManager
 import ca.gmode.triprecorder.data.AppDatabase
@@ -32,6 +33,9 @@ import ca.gmode.triprecorder.data.RecordingRepository
 import ca.gmode.triprecorder.settings.AutoRecordingConfig
 import ca.gmode.triprecorder.settings.AutoRecordingSettings
 import ca.gmode.triprecorder.settings.AutoRecordingStateStore
+import ca.gmode.triprecorder.settings.AppearanceConfig
+import ca.gmode.triprecorder.settings.AppearanceSettings
+import ca.gmode.triprecorder.settings.DashboardPalette
 import ca.gmode.triprecorder.settings.SecureSettings
 import ca.gmode.triprecorder.sync.SyncScheduler
 import ca.gmode.triprecorder.sync.SyncStatusStore
@@ -60,6 +64,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var autoState: AutoRecordingStateStore
     private lateinit var autoManager: AutoRecordingManager
     private lateinit var fusedLocation: FusedLocationProviderClient
+    private lateinit var appearanceSettings: AppearanceSettings
+    private lateinit var palette: DashboardPalette
 
     private lateinit var tripName: EditText
     private lateinit var tripType: Spinner
@@ -84,6 +90,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var locationIntervalInput: EditText
     private lateinit var minimumDistanceInput: EditText
     private lateinit var autoTripType: Spinner
+    private lateinit var themeSpinner: Spinner
+    private lateinit var customAccentInput: EditText
     private var pendingHomeLatitude: Double? = null
     private var pendingHomeLongitude: Double? = null
     private var startAfterPermission = false
@@ -112,9 +120,22 @@ class MainActivity : AppCompatActivity() {
         autoState = AutoRecordingStateStore(this)
         autoManager = AutoRecordingManager(this)
         fusedLocation = LocationServices.getFusedLocationProviderClient(this)
+        appearanceSettings = AppearanceSettings(this)
+        palette = appearanceSettings.palette()
+        applySystemBarPalette()
         setContentView(createContent())
         bindActions()
         refreshContinuously()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applySystemBarPalette() {
+        window.statusBarColor = palette.background
+        window.navigationBarColor = palette.background
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
     }
 
     override fun onResume() {
@@ -155,13 +176,14 @@ class MainActivity : AppCompatActivity() {
                 radius = dp(22).toFloat()
                 strokeWidth = dp(1)
                 strokeColor = OUTLINE
-                setCardBackgroundColor(Color.BLACK)
+                setCardBackgroundColor(BACKGROUND)
                 addView(gauge)
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     bottomMargin = dp(12)
                 }
             },
         )
+        gauge.setPalette(palette)
 
         recorderStatus = text("Checking recorder…", 17f, Color.WHITE, bold = true)
         telemetryStatus = text("", 13f, MUTED)
@@ -185,7 +207,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             isChecked = automaticConfig.enabled
             thumbTintList = checkedStateList(ORANGE, Color.parseColor("#777777"))
-            trackTintList = checkedStateList(Color.parseColor("#5B2A09"), Color.parseColor("#333333"))
+            trackTintList = checkedStateList(palette.activeSurface, Color.parseColor("#333333"))
         }
         autoStatus = text(autoState.status(), 13f, Color.WHITE, bold = true)
         homeLocationStatus = text(homeLocationLabel(), 12f, MUTED)
@@ -223,7 +245,33 @@ class MainActivity : AppCompatActivity() {
                 text(
                     "Leave the home zone to start. Returning inside it for the delay above stops only an automatically started trip. Manual trips remain under manual control.",
                     11f,
-                    Color.parseColor("#8F8F8F"),
+                    MUTED,
+                ),
+            ),
+        )
+
+        val appearanceConfig = appearanceSettings.read()
+        themeSpinner = Spinner(this).apply {
+            adapter = themeAdapter()
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            setSelection(AppearanceSettings.PRESETS.indexOfFirst { it.id == appearanceConfig.themeId }.coerceAtLeast(0))
+        }
+        customAccentInput = editText("Custom #RRGGBB (optional)").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            appearanceConfig.customAccent?.let { setText(AppearanceSettings.colorToHex(it)) }
+        }
+        val saveTheme = dashboardButton("SAVE + APPLY THEME", filled = true)
+        val usePresetColor = dashboardButton("USE PRESET COLOR", filled = false)
+        content.addView(
+            card(
+                "APPEARANCE",
+                labeledInput("DASHBOARD THEME", themeSpinner),
+                labeledInput("CUSTOM ACCENT COLOR", customAccentInput),
+                horizontalButtons(saveTheme, usePresetColor),
+                text(
+                    "The selected theme changes the dashboard background, panels, gauge, buttons, borders, and highlights. Leave the custom color blank to use the theme's original accent.",
+                    11f,
+                    MUTED,
                 ),
             ),
         )
@@ -254,7 +302,7 @@ class MainActivity : AppCompatActivity() {
             text(
                 "GPS ${automaticConfig.locationIntervalSeconds} sec / ${automaticConfig.minimumDistanceMeters} m  •  BAROMETER  •  ACCELERATION  •  GYROSCOPE\nLocal-first recording; automatic Home Assistant retry.",
                 11f,
-                Color.parseColor("#777777"),
+                MUTED,
             ).apply { gravity = Gravity.CENTER }.withBottom(dp(6)),
         )
 
@@ -276,6 +324,8 @@ class MainActivity : AppCompatActivity() {
         }
         saveAutomatic.setOnClickListener { saveAutoSettings() }
         locationPermission.setOnClickListener { openAppLocationSettings() }
+        saveTheme.setOnClickListener { saveAppearance(usePresetAccent = false) }
+        usePresetColor.setOnClickListener { saveAppearance(usePresetAccent = true) }
         refreshAutoUi()
         return scroll
     }
@@ -422,6 +472,22 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Connection saved securely", Toast.LENGTH_SHORT).show()
     }
 
+    private fun saveAppearance(usePresetAccent: Boolean) {
+        val accentText = customAccentInput.text.toString().trim()
+        val customAccent = when {
+            usePresetAccent || accentText.isBlank() -> null
+            else -> AppearanceSettings.parseRgbHex(accentText)
+                ?: run {
+                    Toast.makeText(this, "Enter a color as #RRGGBB, such as #FF7900", Toast.LENGTH_LONG).show()
+                    return
+                }
+        }
+        val preset = AppearanceSettings.PRESETS[themeSpinner.selectedItemPosition]
+        appearanceSettings.save(AppearanceConfig(themeId = preset.id, customAccent = customAccent))
+        Toast.makeText(this, "${preset.label} theme applied", Toast.LENGTH_SHORT).show()
+        recreate()
+    }
+
     private fun refreshContinuously() {
         lifecycleScope.launch {
             while (isActive) {
@@ -543,7 +609,7 @@ class MainActivity : AppCompatActivity() {
     private fun chipBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(5).toFloat()
-        setColor(if (active) Color.parseColor("#4A2105") else Color.parseColor("#171717"))
+        setColor(if (active) palette.activeSurface else palette.inactiveSurface)
         setStroke(dp(1), if (active) ORANGE else OUTLINE)
     }
 
@@ -556,11 +622,11 @@ class MainActivity : AppCompatActivity() {
         insetTop = 0
         insetBottom = 0
         if (filled) {
-            backgroundTintList = stateList(ORANGE, Color.parseColor("#3A210D"))
-            setTextColor(stateList(Color.BLACK, Color.parseColor("#777777")))
+            backgroundTintList = stateList(ORANGE, palette.activeSurface)
+            setTextColor(stateList(contrastText(ORANGE), Color.parseColor("#777777")))
         } else {
-            backgroundTintList = stateList(Color.parseColor("#232323"), Color.parseColor("#171717"))
-            strokeColor = stateList(ORANGE, Color.parseColor("#444444"))
+            backgroundTintList = stateList(PANEL, palette.inactiveSurface)
+            strokeColor = stateList(ORANGE, OUTLINE)
             strokeWidth = dp(1)
             setTextColor(stateList(Color.WHITE, Color.parseColor("#777777")))
         }
@@ -583,7 +649,29 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(if (dropdown) 14 else 10), dp(14), dp(if (dropdown) 14 else 10))
-            setBackgroundColor(if (dropdown) Color.parseColor("#232323") else Color.TRANSPARENT)
+            setBackgroundColor(if (dropdown) PANEL else Color.TRANSPARENT)
+        }
+    }
+
+    private fun themeAdapter(): ArrayAdapter<String> = object : ArrayAdapter<String>(
+        this,
+        android.R.layout.simple_spinner_item,
+        AppearanceSettings.PRESETS.map { it.label },
+    ) {
+        override fun getView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View =
+            themeRow(position, dropdown = false)
+
+        override fun getDropDownView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View =
+            themeRow(position, dropdown = true)
+
+        private fun themeRow(position: Int, dropdown: Boolean): TextView = TextView(this@MainActivity).apply {
+            val preset = AppearanceSettings.PRESETS[position]
+            text = "●  ${preset.label}"
+            textSize = 16f
+            setTextColor(preset.accent)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(if (dropdown) 14 else 10), dp(14), dp(if (dropdown) 14 else 10))
+            setBackgroundColor(if (dropdown) preset.panel else Color.TRANSPARENT)
         }
     }
 
@@ -603,10 +691,18 @@ class MainActivity : AppCompatActivity() {
         intArrayOf(checked, unchecked),
     )
 
+    private fun contrastText(background: Int): Int {
+        val red = (background shr 16) and 0xFF
+        val green = (background shr 8) and 0xFF
+        val blue = background and 0xFF
+        val luminance = red * 299 + green * 587 + blue * 114
+        return if (luminance >= 145_000) Color.BLACK else Color.WHITE
+    }
+
     private fun editText(hintText: String): EditText = EditText(this).apply {
         hint = hintText
         setTextColor(Color.WHITE)
-        setHintTextColor(Color.parseColor("#858585"))
+        setHintTextColor(MUTED)
         backgroundTintList = ColorStateList.valueOf(ORANGE)
         setSingleLine(true)
         setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -647,13 +743,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private val BACKGROUND = Color.parseColor("#070707")
-        private val PANEL = Color.parseColor("#151515")
-        private val OUTLINE = Color.parseColor("#393939")
-        private val ORANGE = Color.parseColor("#FF7900")
-        private val MUTED = Color.parseColor("#AAAAAA")
         private val TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm")
         private val TRIP_TYPE_LABELS = listOf("Street", "Off road", "Snow", "Water")
         private val TRIP_TYPE_VALUES = listOf("street", "off_road", "snow", "water")
     }
+
+    private val BACKGROUND: Int get() = palette.background
+    private val PANEL: Int get() = palette.panel
+    private val OUTLINE: Int get() = palette.outline
+    private val ORANGE: Int get() = palette.accent
+    private val MUTED: Int get() = palette.muted
 }

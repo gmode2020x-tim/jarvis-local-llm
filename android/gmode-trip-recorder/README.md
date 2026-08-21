@@ -5,6 +5,7 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 ## Current capabilities
 
 - Automotive dashboard inspired by Tim's reference: orange-on-black instrument styling, live central speed gauge, glanceable GPS/queue/Home Assistant indicators, and large driving-friendly controls.
+- User-selectable GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color.
 
 - Explicit Start Trip / Stop Trip workflow with Street, Off road, Snow, and Water classifications.
 - Opt-in automatic recording: leaving the saved home zone starts a trip, and remaining home for the configured return delay stops it.
@@ -43,6 +44,7 @@ On first use:
 5. For manual recording, choose a trip type and press **Start trip**. The persistent notification confirms recording.
 6. For automatic recording, stand at home, press **Use current location**, enable **Start when I leave home**, adjust the distance/time fields, and press **Save auto settings**.
 7. When Android opens the app settings, choose **Permissions > Location > Allow all the time**. Return to the app and press **Save auto settings** again. The status must say **Armed** before relying on automatic departure recording.
+8. Under **Appearance**, select a dashboard theme. Optionally enter a custom six-digit color such as `#D946EF`, then press **Save + Apply Theme**.
 
 Geofence delivery is optimized for battery life, so an exit or return can be reported a short time after crossing the boundary. A 250 m home radius and 5 minute return delay are the defaults and are a practical starting point for driving.
 
