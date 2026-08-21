@@ -1,0 +1,9 @@
+{
+  "domain": "gmode_trip_recorder",
+  "name": "GMODE Trip Recorder",
+  "codeowners": [],
+  "dependencies": ["http"],
+  "documentation": "https://www.home-assistant.io/integrations/http/",
+  "iot_class": "local_polling",
+  "version": "1.1.0"
+}

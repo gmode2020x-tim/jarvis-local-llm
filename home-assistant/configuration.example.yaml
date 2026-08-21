@@ -1,0 +1,20 @@
+gmode_trip_recorder:
+  tracking_entity: device_tracker.your_phone
+  osrm_url: "http://OSRM_LAN_IP:5000"
+  state_file: gmode_trip_recorder.json
+  location_entities:
+    - person.your_name
+    - device_tracker.your_phone
+  route_places:
+    - key: work
+      name: Work
+      lat: YOUR_WORK_LATITUDE
+      lon: YOUR_WORK_LONGITUDE
+    - key: cottage
+      name: Cottage
+      lat: YOUR_COTTAGE_LATITUDE
+      lon: YOUR_COTTAGE_LONGITUDE
+  off_road_reference_place:
+    lat: YOUR_OFF_ROAD_REFERENCE_LATITUDE
+    lon: YOUR_OFF_ROAD_REFERENCE_LONGITUDE
+    radius_m: 35000

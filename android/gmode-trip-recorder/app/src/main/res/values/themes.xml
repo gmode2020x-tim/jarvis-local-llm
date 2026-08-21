@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.GModeTripRecorder" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/gmode_green</item>
+        <item name="colorSecondary">@color/gmode_green_dark</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/gmode_navy</item>
+        <item name="android:statusBarColor">@color/gmode_navy</item>
+    </style>
+</resources>

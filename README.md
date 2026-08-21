@@ -10,6 +10,7 @@ Jarvis is a self-hosted assistant package for a local workstation plus an option
 - helper tools for project status, host checks, model checks, and Home Assistant voice experiments
 - natural Home Assistant phrase resolution with deterministic Jarvis-personality answers
 - voice dataset preparation utilities for custom TTS work
+- an offline-first Android GPS/telemetry recorder with automatic Home Assistant catch-up
 
 Use only voices, recordings, and automation targets that you own or have permission to use.
 
@@ -91,6 +92,8 @@ http://YOUR-LLM-HOST:8787
 - [Wake word setup](docs/JARVIS_WAKE_WORD.md)
 - [Voice dataset prep](docs/VOICE_DATASETS.md)
 - [Public release checklist](docs/SECURITY_PUBLIC_RELEASE.md)
+- [Android GMODE Trip Recorder](android/gmode-trip-recorder/README.md)
+- [Home Assistant mobile trip ingestion](home-assistant/README.md)
 
 ## Conversation History
 
@@ -110,6 +113,8 @@ Conversation text can contain private household information. Both files are igno
 - `scripts/setup_jarvis_vm.sh` - installs Node, Ollama, models, and the VM-side Jarvis UI service.
 - `scripts/setup_ollama_linux.sh` - installs and exposes Ollama on a Linux LLM host.
 - `vm/llm-ui/` - deployable VM-side dashboard, API, Home Assistant webhook, Docker Compose, and systemd unit.
+- `android/gmode-trip-recorder/` - Kotlin Android app for offline GPS, S24 sensor telemetry, and retrying HA uploads.
+- `home-assistant/custom_components/gmode_trip_recorder/` - versioned HA trip recorder and authenticated mobile upload API.
 
 ## Public Safety
 
