@@ -113,6 +113,15 @@ class DashboardSettings(context: Context) {
             else -> listOf("pitch", "roll")
         }
 
+        fun defaultTripType(vehicleId: String): String = when (
+            VEHICLE_ID_ALIASES[vehicleId] ?: vehicleId
+        ) {
+            "car" -> "street"
+            "snowmobile" -> "snow"
+            "boat", "seadoo" -> "water"
+            else -> "off_road"
+        }
+
         fun resolveVehicleView(
             modeId: String,
             gaugeTitle: String,

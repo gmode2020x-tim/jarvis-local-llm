@@ -84,13 +84,39 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
+    fun eachVehicleStartsWithItsMatchingSceneType() {
+        val expectedTypes = mapOf(
+            "dirt_bike" to "off_road",
+            "sxs" to "off_road",
+            "quad" to "off_road",
+            "snowmobile" to "snow",
+            "three_wheeler" to "off_road",
+            "truck" to "off_road",
+            "car" to "street",
+            "boat" to "water",
+            "seadoo" to "water",
+        )
+
+        DashboardSettings.VEHICLES.forEach { vehicle ->
+            assertEquals(expectedTypes.getValue(vehicle.id), DashboardSettings.defaultTripType(vehicle.id))
+        }
+    }
+
+    @Test
     fun launchesFullScreenLandscapeCockpit() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        context.getSharedPreferences("dashboard_settings", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
-                assertTrue(root.getChildAt(0) is LandscapeCockpitView)
+                val cockpit = root.getChildAt(0) as LandscapeCockpitView
                 assertEquals(Configuration.ORIENTATION_LANDSCAPE, activity.resources.configuration.orientation)
                 assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, activity.requestedOrientation)
+                assertEquals(R.drawable.dial_mountain_landscape, cockpit.activeBackgroundResourceId())
             }
         }
     }

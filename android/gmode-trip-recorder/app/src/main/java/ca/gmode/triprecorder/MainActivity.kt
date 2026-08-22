@@ -227,7 +227,7 @@ class MainActivity : AppCompatActivity() {
         sideButtonConfig = sideButtonSettings.read()
         palette = appearanceSettings.palette()
         dashboardConfig = dashboardSettings.read()
-        quickTripType = autoSettings.read().tripType
+        quickTripType = DashboardSettings.defaultTripType(dashboardConfig.vehicleId)
         applySystemBarPalette()
         enterImmersiveMode()
         showCockpitScreen()
