@@ -23,11 +23,11 @@ class GeofenceTransitionReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val controller = AutoTripController(context.applicationContext)
+                val controller = HybridHomeController(context.applicationContext)
                 when (event.geofenceTransition) {
-                    Geofence.GEOFENCE_TRANSITION_EXIT -> controller.handleExit()
-                    Geofence.GEOFENCE_TRANSITION_ENTER -> controller.handleEnter()
-                    Geofence.GEOFENCE_TRANSITION_DWELL -> controller.handleDwell()
+                    Geofence.GEOFENCE_TRANSITION_EXIT -> controller.handleGeofenceExit()
+                    Geofence.GEOFENCE_TRANSITION_ENTER -> controller.handleGeofenceEnter()
+                    Geofence.GEOFENCE_TRANSITION_DWELL -> controller.handleGeofenceDwell()
                 }
             } finally {
                 pendingResult.finish()

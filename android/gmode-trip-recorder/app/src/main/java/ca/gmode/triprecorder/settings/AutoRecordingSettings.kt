@@ -7,6 +7,8 @@ data class AutoRecordingConfig(
     val homeLatitude: Double? = null,
     val homeLongitude: Double? = null,
     val homeRadiusMeters: Int = DEFAULT_HOME_RADIUS_METERS,
+    val homeWifiSsid: String? = null,
+    val wifiDepartureDelayMinutes: Int = DEFAULT_WIFI_DEPARTURE_DELAY_MINUTES,
     val returnDwellMinutes: Int = DEFAULT_RETURN_DWELL_MINUTES,
     val locationIntervalSeconds: Int = DEFAULT_LOCATION_INTERVAL_SECONDS,
     val minimumDistanceMeters: Int = DEFAULT_MINIMUM_DISTANCE_METERS,
@@ -16,6 +18,8 @@ data class AutoRecordingConfig(
         homeLatitude = homeLatitude?.takeIf { it in -90.0..90.0 },
         homeLongitude = homeLongitude?.takeIf { it in -180.0..180.0 },
         homeRadiusMeters = homeRadiusMeters.coerceIn(100, 5_000),
+        homeWifiSsid = homeWifiSsid?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }?.take(64),
+        wifiDepartureDelayMinutes = wifiDepartureDelayMinutes.coerceIn(1, 30),
         returnDwellMinutes = returnDwellMinutes.coerceIn(1, 120),
         locationIntervalSeconds = locationIntervalSeconds.coerceIn(2, 300),
         minimumDistanceMeters = minimumDistanceMeters.coerceIn(1, 500),
@@ -25,8 +29,12 @@ data class AutoRecordingConfig(
     val hasHomeLocation: Boolean
         get() = homeLatitude != null && homeLongitude != null
 
+    val hasHomeWifi: Boolean
+        get() = !homeWifiSsid.isNullOrBlank()
+
     companion object {
         const val DEFAULT_HOME_RADIUS_METERS = 250
+        const val DEFAULT_WIFI_DEPARTURE_DELAY_MINUTES = 2
         const val DEFAULT_RETURN_DWELL_MINUTES = 5
         const val DEFAULT_LOCATION_INTERVAL_SECONDS = 5
         const val DEFAULT_MINIMUM_DISTANCE_METERS = 5
@@ -42,6 +50,11 @@ class AutoRecordingSettings(context: Context) {
         homeLatitude = preferences.getNullableDouble(KEY_HOME_LATITUDE),
         homeLongitude = preferences.getNullableDouble(KEY_HOME_LONGITUDE),
         homeRadiusMeters = preferences.getInt(KEY_HOME_RADIUS, AutoRecordingConfig.DEFAULT_HOME_RADIUS_METERS),
+        homeWifiSsid = preferences.getString(KEY_HOME_WIFI_SSID, null),
+        wifiDepartureDelayMinutes = preferences.getInt(
+            KEY_WIFI_DEPARTURE_DELAY,
+            AutoRecordingConfig.DEFAULT_WIFI_DEPARTURE_DELAY_MINUTES,
+        ),
         returnDwellMinutes = preferences.getInt(KEY_RETURN_DWELL, AutoRecordingConfig.DEFAULT_RETURN_DWELL_MINUTES),
         locationIntervalSeconds = preferences.getInt(KEY_LOCATION_INTERVAL, AutoRecordingConfig.DEFAULT_LOCATION_INTERVAL_SECONDS),
         minimumDistanceMeters = preferences.getInt(KEY_MINIMUM_DISTANCE, AutoRecordingConfig.DEFAULT_MINIMUM_DISTANCE_METERS),
@@ -55,6 +68,8 @@ class AutoRecordingSettings(context: Context) {
             .putNullableDouble(KEY_HOME_LATITUDE, normalized.homeLatitude)
             .putNullableDouble(KEY_HOME_LONGITUDE, normalized.homeLongitude)
             .putInt(KEY_HOME_RADIUS, normalized.homeRadiusMeters)
+            .putString(KEY_HOME_WIFI_SSID, normalized.homeWifiSsid)
+            .putInt(KEY_WIFI_DEPARTURE_DELAY, normalized.wifiDepartureDelayMinutes)
             .putInt(KEY_RETURN_DWELL, normalized.returnDwellMinutes)
             .putInt(KEY_LOCATION_INTERVAL, normalized.locationIntervalSeconds)
             .putInt(KEY_MINIMUM_DISTANCE, normalized.minimumDistanceMeters)
@@ -79,6 +94,8 @@ class AutoRecordingSettings(context: Context) {
         const val KEY_HOME_LATITUDE = "home_latitude"
         const val KEY_HOME_LONGITUDE = "home_longitude"
         const val KEY_HOME_RADIUS = "home_radius_meters"
+        const val KEY_HOME_WIFI_SSID = "home_wifi_ssid"
+        const val KEY_WIFI_DEPARTURE_DELAY = "wifi_departure_delay_minutes"
         const val KEY_RETURN_DWELL = "return_dwell_minutes"
         const val KEY_LOCATION_INTERVAL = "location_interval_seconds"
         const val KEY_MINIMUM_DISTANCE = "minimum_distance_meters"

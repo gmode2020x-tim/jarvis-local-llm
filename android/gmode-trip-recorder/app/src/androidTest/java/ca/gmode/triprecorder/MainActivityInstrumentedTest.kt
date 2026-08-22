@@ -108,6 +108,9 @@ class MainActivityInstrumentedTest {
                 assertTrue(labels.any { it == "CALIBRATE PITCH + ROLL ZERO" })
                 assertTrue(labels.any { it == "EXPORT RECORDED TRIP" })
                 assertTrue(labels.any { it == "EXPORT TRIP FILE" })
+                assertTrue(labels.any { it == "USE CURRENT WI-FI" })
+                assertTrue(labels.any { it == "CHOOSE WI-FI IN ANDROID" })
+                assertTrue(labels.any { it.contains("Hybrid mode uses both signals") })
                 assertTrue(labels.none { it.contains("ROLL PERSPECTIVE") })
             }
         }

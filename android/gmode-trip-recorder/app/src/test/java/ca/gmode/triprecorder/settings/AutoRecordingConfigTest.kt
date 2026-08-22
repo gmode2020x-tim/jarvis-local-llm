@@ -11,6 +11,8 @@ class AutoRecordingConfigTest {
             homeLatitude = 120.0,
             homeLongitude = -220.0,
             homeRadiusMeters = 1,
+            homeWifiSsid = "  \"My Home Network\"  ",
+            wifiDepartureDelayMinutes = 99,
             returnDwellMinutes = 999,
             locationIntervalSeconds = 1,
             minimumDistanceMeters = 999,
@@ -20,9 +22,22 @@ class AutoRecordingConfigTest {
         assertNull(normalized.homeLatitude)
         assertNull(normalized.homeLongitude)
         assertEquals(100, normalized.homeRadiusMeters)
+        assertEquals("My Home Network", normalized.homeWifiSsid)
+        assertEquals(30, normalized.wifiDepartureDelayMinutes)
         assertEquals(120, normalized.returnDwellMinutes)
         assertEquals(2, normalized.locationIntervalSeconds)
         assertEquals(500, normalized.minimumDistanceMeters)
         assertEquals("street", normalized.tripType)
+    }
+
+    @Test
+    fun blankHomeWifiIsDisabledAndDelayHasSafeMinimum() {
+        val normalized = AutoRecordingConfig(
+            homeWifiSsid = "   ",
+            wifiDepartureDelayMinutes = 0,
+        ).normalized()
+
+        assertNull(normalized.homeWifiSsid)
+        assertEquals(1, normalized.wifiDepartureDelayMinutes)
     }
 }

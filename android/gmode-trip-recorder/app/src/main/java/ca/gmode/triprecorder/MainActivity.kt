@@ -38,6 +38,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import ca.gmode.triprecorder.auto.AutoRecordingManager
+import ca.gmode.triprecorder.auto.HomeWifiReader
 import ca.gmode.triprecorder.data.AppDatabase
 import ca.gmode.triprecorder.data.RecordingRepository
 import ca.gmode.triprecorder.data.TripEntity
@@ -133,6 +134,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var autoStatus: TextView
     private lateinit var autoPermissionStatus: TextView
     private lateinit var homeRadiusInput: EditText
+    private lateinit var homeWifiInput: EditText
+    private lateinit var homeWifiStatus: TextView
+    private lateinit var wifiDepartureDelayInput: EditText
     private lateinit var returnDwellInput: EditText
     private lateinit var locationIntervalInput: EditText
     private lateinit var minimumDistanceInput: EditText
@@ -143,6 +147,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingHomeLongitude: Double? = null
     private var startAfterPermission = false
     private var captureHomeAfterPermission = false
+    private var captureWifiAfterPermission = false
     private var saveAutoAfterPermission = false
     private var levelCalibrationInProgress = false
 
@@ -153,10 +158,12 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (locationGranted && startAfterPermission) startRecording(requestedTripType)
         if (locationGranted && captureHomeAfterPermission) captureHomeLocation()
+        if (locationGranted && captureWifiAfterPermission) captureCurrentHomeWifi()
         if (locationGranted && saveAutoAfterPermission) saveAutoSettings()
         startAfterPermission = false
         requestedTripType = null
         captureHomeAfterPermission = false
+        captureWifiAfterPermission = false
         saveAutoAfterPermission = false
     }
 
@@ -192,6 +199,12 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Export failed: ${error.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private val wifiPanelLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        captureCurrentHomeWifi()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -525,8 +538,14 @@ class MainActivity : AppCompatActivity() {
         }
         autoStatus = text(autoState.status(), 13f, Color.WHITE, bold = true)
         homeLocationStatus = text(homeLocationLabel(), 12f, MUTED)
+        homeWifiStatus = text(homeWifiLabel(automaticConfig.homeWifiSsid), 12f, MUTED)
         autoPermissionStatus = text("", 12f, MUTED)
         homeRadiusInput = numberInput(automaticConfig.homeRadiusMeters)
+        homeWifiInput = editText("Home Wi-Fi name (SSID)").apply {
+            automaticConfig.homeWifiSsid?.let(::setText)
+            maxLines = 1
+        }
+        wifiDepartureDelayInput = numberInput(automaticConfig.wifiDepartureDelayMinutes)
         returnDwellInput = numberInput(automaticConfig.returnDwellMinutes)
         locationIntervalInput = numberInput(automaticConfig.locationIntervalSeconds)
         minimumDistanceInput = numberInput(automaticConfig.minimumDistanceMeters)
@@ -536,6 +555,8 @@ class MainActivity : AppCompatActivity() {
             setSelection(TRIP_TYPE_VALUES.indexOf(automaticConfig.tripType).coerceAtLeast(0))
         }
         val useCurrentLocation = dashboardButton("USE CURRENT LOCATION", filled = false)
+        val useCurrentWifi = dashboardButton("USE CURRENT WI-FI", filled = false)
+        val chooseWifi = dashboardButton("CHOOSE WI-FI IN ANDROID", filled = false)
         val saveAutomatic = dashboardButton("SAVE AUTO SETTINGS", filled = true)
         val locationPermission = dashboardButton("LOCATION PERMISSION", filled = false)
         content.addView(
@@ -545,19 +566,25 @@ class MainActivity : AppCompatActivity() {
                 autoStatus,
                 homeLocationStatus,
                 useCurrentLocation,
+                homeWifiStatus,
+                labeledInput("HOME WI-FI (OPTIONAL)", homeWifiInput),
+                horizontalButtons(useCurrentWifi, chooseWifi),
                 horizontalViews(
                     labeledInput("HOME RADIUS (M)", homeRadiusInput),
-                    labeledInput("RETURN DELAY (MIN)", returnDwellInput),
+                    labeledInput("WI-FI DEPARTURE DELAY (MIN)", wifiDepartureDelayInput),
                 ),
                 horizontalViews(
+                    labeledInput("RETURN DELAY (MIN)", returnDwellInput),
                     labeledInput("GPS INTERVAL (SEC)", locationIntervalInput),
-                    labeledInput("MIN MOVEMENT (M)", minimumDistanceInput),
                 ),
-                labeledInput("AUTOMATIC TRIP TYPE", autoTripType),
+                horizontalViews(
+                    labeledInput("MIN MOVEMENT (M)", minimumDistanceInput),
+                    labeledInput("AUTOMATIC TRIP TYPE", autoTripType),
+                ),
                 horizontalButtons(saveAutomatic, locationPermission),
                 autoPermissionStatus,
                 text(
-                    "Leave the home zone to start. Returning inside it for the delay above stops only an automatically started trip. Manual trips remain under manual control.",
+                    "Hybrid mode uses both signals: leaving home Wi-Fi starts the confirmation timer, and GPS must also place the phone outside the home radius before a trip starts. GPS remains active if Wi-Fi status is unavailable. Returning inside the GPS zone for the return delay stops only an automatically started trip.",
                     11f,
                     MUTED,
                 ),
@@ -750,6 +777,10 @@ class MainActivity : AppCompatActivity() {
                 requestForegroundLocationPermissions()
             }
         }
+        useCurrentWifi.setOnClickListener { captureCurrentHomeWifi() }
+        chooseWifi.setOnClickListener {
+            wifiPanelLauncher.launch(Intent(Settings.Panel.ACTION_WIFI))
+        }
         saveAutomatic.setOnClickListener { saveAutoSettings() }
         locationPermission.setOnClickListener { openAppLocationSettings() }
         saveTheme.setOnClickListener { saveAppearance(usePresetAccent = false) }
@@ -921,6 +952,10 @@ class MainActivity : AppCompatActivity() {
             homeLatitude = pendingHomeLatitude,
             homeLongitude = pendingHomeLongitude,
             homeRadiusMeters = homeRadiusInput.intValue(AutoRecordingConfig.DEFAULT_HOME_RADIUS_METERS),
+            homeWifiSsid = HomeWifiReader.normalizeSsid(homeWifiInput.text.toString()),
+            wifiDepartureDelayMinutes = wifiDepartureDelayInput.intValue(
+                AutoRecordingConfig.DEFAULT_WIFI_DEPARTURE_DELAY_MINUTES,
+            ),
             returnDwellMinutes = returnDwellInput.intValue(AutoRecordingConfig.DEFAULT_RETURN_DWELL_MINUTES),
             locationIntervalSeconds = locationIntervalInput.intValue(AutoRecordingConfig.DEFAULT_LOCATION_INTERVAL_SECONDS),
             minimumDistanceMeters = minimumDistanceInput.intValue(AutoRecordingConfig.DEFAULT_MINIMUM_DISTANCE_METERS),
@@ -928,6 +963,7 @@ class MainActivity : AppCompatActivity() {
         ).normalized()
         autoSettings.save(config)
         populateAutoInputs(config)
+        homeWifiStatus.text = homeWifiLabel(config.homeWifiSsid)
         if (config.enabled && !autoManager.hasBackgroundLocation()) {
             autoState.updateStatus("Saved — choose Allow all the time for automatic departures")
             refreshAutoUi()
@@ -955,6 +991,7 @@ class MainActivity : AppCompatActivity() {
         val config = autoSettings.read()
         autoEnabledSwitch.isChecked = config.enabled
         autoStatus.text = autoState.status()
+        homeWifiStatus.text = homeWifiLabel(config.homeWifiSsid)
         autoPermissionStatus.text = when {
             !config.enabled -> "Optional — automatic recording is disabled"
             !autoManager.hasFineLocation() -> "Precise location permission is required"
@@ -965,6 +1002,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun populateAutoInputs(config: AutoRecordingConfig) {
         homeRadiusInput.setText(config.homeRadiusMeters.toString())
+        homeWifiInput.setText(config.homeWifiSsid.orEmpty())
+        wifiDepartureDelayInput.setText(config.wifiDepartureDelayMinutes.toString())
         returnDwellInput.setText(config.returnDwellMinutes.toString())
         locationIntervalInput.setText(config.locationIntervalSeconds.toString())
         minimumDistanceInput.setText(config.minimumDistanceMeters.toString())
@@ -975,6 +1014,34 @@ class MainActivity : AppCompatActivity() {
         val longitude = pendingHomeLongitude ?: return "Home location is not set"
         val accuracy = accuracyMeters?.let { " • GPS ±${it.roundToInt()} m" }.orEmpty()
         return "Home: %.6f, %.6f%s".format(latitude, longitude, accuracy)
+    }
+
+    private fun captureCurrentHomeWifi() {
+        if (!hasFineLocation()) {
+            captureWifiAfterPermission = true
+            requestForegroundLocationPermissions()
+            return
+        }
+        val ssid = HomeWifiReader(this).currentSsid()
+        if (ssid == null) {
+            homeWifiStatus.text = "No named Wi-Fi is connected — connect to the home network and try again"
+            Toast.makeText(this, "Connect to your home Wi-Fi, then press Use current Wi-Fi", Toast.LENGTH_LONG).show()
+            return
+        }
+        homeWifiInput.setText(ssid)
+        homeWifiStatus.text = "Selected current Wi-Fi: $ssid — save automatic settings"
+        Toast.makeText(this, "$ssid selected as home Wi-Fi", Toast.LENGTH_LONG).show()
+    }
+
+    private fun homeWifiLabel(configuredSsid: String?): String {
+        val home = HomeWifiReader.normalizeSsid(configuredSsid)
+            ?: return "Home Wi-Fi is optional and is not set"
+        val connected = HomeWifiReader(this).isConnectedTo(home)
+        return if (connected) {
+            "Home Wi-Fi: $home • connected now"
+        } else {
+            "Home Wi-Fi: $home • not connected now"
+        }
     }
 
     private fun saveConnection() {

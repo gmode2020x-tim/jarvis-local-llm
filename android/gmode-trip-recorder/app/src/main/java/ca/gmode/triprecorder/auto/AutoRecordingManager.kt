@@ -19,15 +19,18 @@ class AutoRecordingManager(private val context: Context) {
     private val settings = AutoRecordingSettings(appContext)
     private val state = AutoRecordingStateStore(appContext)
     private val client = LocationServices.getGeofencingClient(appContext)
+    private val wifiMonitor = HomeWifiMonitor(appContext)
 
     fun refreshRegistration(callback: ((Boolean, String) -> Unit)? = null) {
         val config = settings.read()
         if (!config.enabled) {
             client.removeGeofences(pendingIntent())
+            wifiMonitor.refresh(config)
             complete(false, "Automatic recording is off", callback)
             return
         }
         if (!config.hasHomeLocation) {
+            wifiMonitor.unregister()
             complete(false, "Set the home location to arm automatic recording", callback)
             return
         }
@@ -36,9 +39,11 @@ class AutoRecordingManager(private val context: Context) {
             return
         }
         if (!hasBackgroundLocation()) {
+            wifiMonitor.unregister()
             complete(false, "Choose Allow all the time in Android location settings", callback)
             return
         }
+        wifiMonitor.refresh(config)
         register(config, callback)
     }
 
@@ -72,7 +77,11 @@ class AutoRecordingManager(private val context: Context) {
             client.addGeofences(request, pendingIntent)
                 .addOnSuccessListener {
                     val message = if (state.activeAutoTripId == null) {
-                        "Armed — starts after leaving the ${config.homeRadiusMeters} m home zone"
+                        if (config.hasHomeWifi) {
+                            "Armed — ${config.homeWifiSsid} plus the ${config.homeRadiusMeters} m GPS zone detect departures"
+                        } else {
+                            "Armed — starts after leaving the ${config.homeRadiusMeters} m home zone"
+                        }
                     } else {
                         "Away from home — automatic trip is recording"
                     }

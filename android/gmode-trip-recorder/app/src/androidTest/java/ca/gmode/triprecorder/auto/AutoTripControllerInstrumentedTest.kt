@@ -102,4 +102,25 @@ class AutoTripControllerInstrumentedTest {
         assertEquals("Manual trip", repository.activeTrip()?.title)
         assertNull(state.activeAutoTripId)
     }
+
+    @Test
+    fun hybridWifiSettingsPersistWithTheGpsHomeZone() {
+        settings.save(
+            AutoRecordingConfig(
+                enabled = true,
+                homeLatitude = 44.25,
+                homeLongitude = -79.5,
+                homeRadiusMeters = 300,
+                homeWifiSsid = "GMODE Home",
+                wifiDepartureDelayMinutes = 4,
+            ),
+        )
+
+        val restored = settings.read()
+        assertEquals("GMODE Home", restored.homeWifiSsid)
+        assertEquals(4, restored.wifiDepartureDelayMinutes)
+        assertEquals(300, restored.homeRadiusMeters)
+        assertTrue(restored.hasHomeWifi)
+        assertTrue(restored.hasHomeLocation)
+    }
 }
