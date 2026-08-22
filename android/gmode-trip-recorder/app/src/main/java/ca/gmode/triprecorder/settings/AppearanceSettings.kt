@@ -43,11 +43,24 @@ class AppearanceSettings(context: Context) {
     fun palette(config: AppearanceConfig = read()): DashboardPalette = resolvePalette(config)
 
     companion object {
-        const val DEFAULT_THEME_ID = "gmode_orange"
+        const val DEFAULT_THEME_ID = "reference_red"
 
         val PRESETS = listOf(
             DashboardPalette(
                 id = DEFAULT_THEME_ID,
+                label = "Reference Red",
+                accent = color("E20B17"),
+                background = color("030303"),
+                panel = color("111111"),
+                outline = color("303030"),
+                muted = color("B9B9B9"),
+                inactiveSurface = color("121212"),
+                activeSurface = color("42080C"),
+                dialCenter = color("111111"),
+                dialMiddle = color("050505"),
+            ),
+            DashboardPalette(
+                id = "gmode_orange",
                 label = "GMODE Orange",
                 accent = color("FF7900"),
                 background = color("070707"),

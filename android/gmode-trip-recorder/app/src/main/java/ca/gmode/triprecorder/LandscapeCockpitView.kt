@@ -3,6 +3,7 @@ package ca.gmode.triprecorder
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -57,6 +58,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val utvSide: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_side) }
     private val utvFront: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_front) }
+    private val dialLandscape: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.dial_mountain_landscape) }
+    private val dashboardLeather: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.dashboard_black_leather) }
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
@@ -90,6 +93,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.shader = LinearGradient(0f, 0f, 0f, h, Color.BLACK, palette.background, Shader.TileMode.CLAMP)
         canvas.drawRect(0f, 0f, w, h, paint)
         paint.shader = null
+        drawDashboardTexture(canvas, w, h)
         drawFrame(canvas, w, h)
         drawHeader(canvas, w, h)
         drawSideControls(canvas, w, h)
@@ -105,70 +109,104 @@ class LandscapeCockpitView(context: Context) : View(context) {
             }
         }
         val heroY = h * 0.50f
-        val heroRadius = min(w * 0.15f, h * 0.35f)
-        drawHeroGauge(canvas, w * 0.35f, heroY, heroRadius, heroReadings[0], sideView = true)
-        drawHeroGauge(canvas, w * 0.65f, heroY, heroRadius, heroReadings[1], sideView = false)
-        drawText(canvas, state.tripLabel, w * 0.50f, h * 0.955f, h * 0.026f, palette.muted, Paint.Align.CENTER, true)
+        val heroRadius = min(w * 0.165f, h * 0.43f)
+        drawHeroGauge(canvas, w * 0.345f, heroY, heroRadius, heroReadings[0], sideView = true)
+        drawHeroGauge(canvas, w * 0.655f, heroY, heroRadius, heroReadings[1], sideView = false)
+    }
+
+    private fun drawDashboardTexture(canvas: Canvas, w: Float, h: Float) {
+        paint.style = Paint.Style.FILL
+        paint.alpha = 155
+        canvas.drawBitmap(dashboardLeather, null, RectF(0f, 0f, w, h), paint)
+        paint.alpha = 255
+        paint.shader = null
+        paint.style = Paint.Style.FILL
     }
 
     private fun drawFrame(canvas: Canvas, w: Float, h: Float) {
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = h * 0.004f
-        paint.color = palette.outline
-        canvas.drawRoundRect(RectF(w * 0.004f, h * 0.008f, w * 0.996f, h * 0.986f), h * 0.025f, h * 0.025f, paint)
+        paint.strokeWidth = h * 0.006f
+        paint.color = Color.parseColor("#373737")
+        canvas.drawRoundRect(RectF(w * 0.004f, h * 0.008f, w * 0.996f, h * 0.992f), h * 0.024f, h * 0.024f, paint)
         paint.strokeWidth = h * 0.0015f
-        paint.color = Color.argb(150, 255, 255, 255)
+        paint.color = Color.argb(145, 255, 255, 255)
+        canvas.drawRoundRect(RectF(w * 0.008f, h * 0.012f, w * 0.992f, h * 0.988f), h * 0.020f, h * 0.020f, paint)
         paint.style = Paint.Style.FILL
     }
 
     private fun drawHeader(canvas: Canvas, w: Float, h: Float) {
         drawText(canvas, state.time, w * 0.035f, h * 0.065f, h * 0.047f, Color.WHITE, Paint.Align.LEFT, true)
-        drawText(canvas, "●  ${state.gpsLabel}", w * 0.19f, h * 0.058f, h * 0.024f, palette.accent, Paint.Align.LEFT, true)
+        drawText(canvas, "●  ${state.gpsLabel}", w * 0.18f, h * 0.058f, h * 0.022f, palette.accent, Paint.Align.LEFT, true)
         drawText(canvas, state.pendingLabel, w * 0.50f, h * 0.058f, h * 0.023f, palette.muted, Paint.Align.CENTER, true)
-        drawText(canvas, state.homeAssistantLabel, w * 0.81f, h * 0.058f, h * 0.023f, palette.accent, Paint.Align.RIGHT, true)
+        drawText(canvas, state.homeAssistantLabel, w * 0.82f, h * 0.058f, h * 0.022f, palette.accent, Paint.Align.RIGHT, true)
         drawText(canvas, state.vehicleLabel.uppercase(), w * 0.965f, h * 0.065f, h * 0.027f, Color.WHITE, Paint.Align.RIGHT, true)
     }
 
     private fun drawSideControls(canvas: Canvas, w: Float, h: Float) {
         val labelsLeft = listOf(
-            CockpitAction.START to if (state.recording) "RECORDING" else "START TRIP",
-            CockpitAction.STOP to "STOP + SYNC",
-            CockpitAction.AUTO to if (state.automaticArmed) "AUTO ARMED" else "AUTO RECORD",
+            CockpitAction.START to if (state.recording) "RECORDING" else "START",
+            CockpitAction.STOP to "STOP",
+            CockpitAction.AUTO to if (state.automaticArmed) "AUTO ARMED" else "AUTO",
             CockpitAction.SETTINGS to "SETTINGS",
         )
         val labelsRight = listOf(
-            CockpitAction.SYNC to "SYNC NOW",
+            CockpitAction.SYNC to "SYNC",
             CockpitAction.TRIP_TYPE to state.tripTypeLabel,
             CockpitAction.THEME to "THEME",
             CockpitAction.HOME_ASSISTANT to "HA LINK",
         )
-        val top = h * 0.14f
-        val height = h * 0.15f
-        val gap = h * 0.025f
+        val top = h * 0.105f
+        val height = h * 0.18f
+        val gap = h * 0.022f
         labelsLeft.forEachIndexed { index, pair ->
-            drawControl(canvas, RectF(w * 0.012f, top + index * (height + gap), w * 0.177f, top + index * (height + gap) + height), pair.first, pair.second)
+            drawControl(canvas, RectF(w * 0.012f, top + index * (height + gap), w * 0.180f, top + index * (height + gap) + height), pair.first, pair.second)
         }
         labelsRight.forEachIndexed { index, pair ->
-            drawControl(canvas, RectF(w * 0.823f, top + index * (height + gap), w * 0.988f, top + index * (height + gap) + height), pair.first, pair.second)
+            drawControl(canvas, RectF(w * 0.820f, top + index * (height + gap), w * 0.988f, top + index * (height + gap) + height), pair.first, pair.second)
         }
     }
 
     private fun drawControl(canvas: Canvas, rect: RectF, action: CockpitAction, label: String) {
         touchZones[action] = rect
+        val leftSide = action == CockpitAction.START || action == CockpitAction.STOP || action == CockpitAction.AUTO || action == CockpitAction.SETTINGS
         paint.style = Paint.Style.FILL
-        paint.shader = LinearGradient(rect.left, rect.top, rect.right, rect.bottom, palette.panel, Color.BLACK, Shader.TileMode.CLAMP)
+        paint.shader = LinearGradient(
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            intArrayOf(Color.parseColor("#282828"), palette.panel, Color.parseColor("#060606")),
+            floatArrayOf(0f, 0.42f, 1f),
+            Shader.TileMode.CLAMP,
+        )
         canvas.drawRoundRect(rect, rect.height() * 0.12f, rect.height() * 0.12f, paint)
         paint.shader = null
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = rect.height() * 0.035f
-        paint.color = if (action == CockpitAction.START && state.recording) Color.parseColor("#35D06F") else palette.outline
+        paint.shader = BitmapShader(dashboardLeather, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        paint.alpha = 38
         canvas.drawRoundRect(rect, rect.height() * 0.12f, rect.height() * 0.12f, paint)
+        paint.alpha = 255
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = rect.height() * 0.040f
+        paint.color = Color.parseColor("#080808")
+        canvas.drawRoundRect(rect, rect.height() * 0.12f, rect.height() * 0.12f, paint)
+        paint.strokeWidth = rect.height() * 0.012f
+        paint.color = if (action == CockpitAction.START && state.recording) Color.parseColor("#35D06F") else Color.parseColor("#4A4A4A")
+        canvas.drawRoundRect(
+            RectF(rect.left + rect.height() * 0.07f, rect.top + rect.height() * 0.07f, rect.right - rect.height() * 0.07f, rect.bottom - rect.height() * 0.07f),
+            rect.height() * 0.08f,
+            rect.height() * 0.08f,
+            paint,
+        )
+        val accentX = if (leftSide) rect.right - rect.width() * 0.055f else rect.left + rect.width() * 0.055f
         paint.color = palette.accent
-        paint.strokeWidth = rect.height() * 0.035f
-        canvas.drawLine(rect.left + rect.width() * 0.06f, rect.top + rect.height() * 0.17f, rect.left + rect.width() * 0.06f, rect.bottom - rect.height() * 0.17f, paint)
+        paint.strokeWidth = rect.height() * 0.045f
+        paint.strokeCap = Paint.Cap.ROUND
+        canvas.drawLine(accentX, rect.top + rect.height() * 0.18f, accentX, rect.bottom - rect.height() * 0.18f, paint)
         paint.style = Paint.Style.FILL
-        drawControlIcon(canvas, action, rect.left + rect.width() * 0.24f, rect.centerY(), rect.height() * 0.25f)
-        drawText(canvas, label, rect.left + rect.width() * 0.42f, rect.centerY() + rect.height() * 0.09f, rect.height() * 0.23f, Color.WHITE, Paint.Align.LEFT, true)
+        drawControlIcon(canvas, action, rect.left + rect.width() * 0.25f, rect.centerY(), rect.height() * 0.23f)
+        drawText(canvas, label, rect.left + rect.width() * 0.42f, rect.centerY() + rect.height() * 0.075f, rect.height() * 0.18f, Color.WHITE, Paint.Align.LEFT, true)
+        paint.strokeCap = Paint.Cap.BUTT
     }
 
     private fun drawControlIcon(canvas: Canvas, action: CockpitAction, cx: Float, cy: Float, size: Float) {
@@ -258,23 +296,40 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.shader = RadialGradient(cx, cy, radius, intArrayOf(palette.dialCenter, palette.dialMiddle, Color.BLACK), floatArrayOf(0f, 0.65f, 1f), Shader.TileMode.CLAMP)
         canvas.drawCircle(cx, cy, radius, paint)
         paint.shader = null
+
+        paint.color = Color.parseColor("#050505")
+        canvas.drawCircle(cx, cy, radius * 0.985f, paint)
         paint.style = Paint.Style.STROKE
-        paint.shader = LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius, Color.parseColor("#757575"), Color.parseColor("#121212"), Shader.TileMode.MIRROR)
+        paint.shader = LinearGradient(
+            cx - radius,
+            cy - radius,
+            cx + radius,
+            cy + radius,
+            intArrayOf(Color.parseColor("#050505"), Color.parseColor("#353535"), Color.parseColor("#030303")),
+            floatArrayOf(0f, 0.48f, 1f),
+            Shader.TileMode.CLAMP,
+        )
         paint.strokeWidth = radius * 0.105f
-        canvas.drawCircle(cx, cy, radius * 0.955f, paint)
+        canvas.drawCircle(cx, cy, radius * 0.94f, paint)
         paint.shader = null
-        paint.color = palette.outline
-        paint.strokeWidth = radius * 0.035f
-        canvas.drawCircle(cx, cy, radius * 0.89f, paint)
+        paint.color = Color.parseColor("#747474")
+        paint.strokeWidth = radius * 0.006f
+        canvas.drawCircle(cx, cy, radius * 0.992f, paint)
+        paint.color = Color.parseColor("#0A0A0A")
+        paint.strokeWidth = radius * 0.030f
+        canvas.drawCircle(cx, cy, radius * 0.865f, paint)
+        paint.color = Color.parseColor("#696969")
+        paint.strokeWidth = radius * 0.006f
+        canvas.drawCircle(cx, cy, radius * 0.846f, paint)
         paint.color = palette.accent
-        paint.strokeWidth = radius * 0.022f
-        canvas.drawArc(RectF(cx - radius * 0.87f, cy - radius * 0.87f, cx + radius * 0.87f, cy + radius * 0.87f), 205f, 130f, false, paint)
-        for (tick in 0..24) {
-            val angle = Math.toRadians((135.0 + tick * 11.25))
-            val outer = radius * 0.88f
-            val inner = radius * if (tick % 4 == 0) 0.74f else 0.80f
-            paint.color = if (tick % 6 == 0) palette.accent else Color.WHITE
-            paint.strokeWidth = radius * if (tick % 4 == 0) 0.025f else 0.012f
+        paint.strokeWidth = radius * 0.010f
+        canvas.drawCircle(cx, cy, radius * 0.825f, paint)
+        for (tick in 0 until 60) {
+            val angle = Math.toRadians(tick * 6.0)
+            val outer = radius * 0.825f
+            val inner = radius * if (tick % 5 == 0) 0.715f else 0.770f
+            paint.color = if (tick in 46..54) palette.accent else Color.WHITE
+            paint.strokeWidth = radius * if (tick % 5 == 0) 0.018f else 0.006f
             canvas.drawLine(
                 cx + cos(angle).toFloat() * inner,
                 cy + sin(angle).toFloat() * inner,
@@ -284,7 +339,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
             )
         }
         paint.style = Paint.Style.FILL
-        drawText(canvas, reading.title.uppercase(), cx, cy - radius * 0.70f, radius * 0.14f, Color.WHITE, Paint.Align.CENTER, true)
+        drawText(canvas, reading.title.uppercase(), cx, cy - radius * 0.67f, radius * 0.095f, Color.WHITE, Paint.Align.CENTER, false)
         drawTerrain(canvas, cx, cy + radius * 0.04f, radius)
         canvas.save()
         canvas.clipCircle(cx, cy + radius * 0.02f, radius * 0.69f)
@@ -297,8 +352,12 @@ class LandscapeCockpitView(context: Context) : View(context) {
         }
         canvas.restore()
         drawAngleLabels(canvas, cx, cy, radius)
-        drawText(canvas, reading.value, cx, cy + radius * 0.66f, radius * 0.24f, palette.accent, Paint.Align.CENTER, true)
-        drawText(canvas, reading.unit, cx, cy + radius * 0.83f, radius * 0.09f, palette.muted, Paint.Align.CENTER, false)
+        drawText(canvas, reading.value, cx, cy + radius * 0.58f, radius * 0.18f, palette.accent, Paint.Align.CENTER, true)
+        if (reading.title.equals("PITCH", ignoreCase = true) || reading.title.equals("ROLL", ignoreCase = true)) {
+            drawCalibrationScale(canvas, cx, cy + radius * 0.72f, radius)
+        } else {
+            drawText(canvas, reading.unit, cx, cy + radius * 0.74f, radius * 0.07f, palette.muted, Paint.Align.CENTER, false)
+        }
     }
 
     private fun drawAngleLabels(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
@@ -314,10 +373,10 @@ class LandscapeCockpitView(context: Context) : View(context) {
             drawText(
                 canvas,
                 "${value}°",
-                cx + cos(angle).toFloat() * radius * 0.62f,
-                cy + sin(angle).toFloat() * radius * 0.62f + radius * 0.025f,
-                radius * 0.072f,
-                palette.muted,
+                cx + cos(angle).toFloat() * radius * 0.635f,
+                cy + sin(angle).toFloat() * radius * 0.635f + radius * 0.020f,
+                radius * 0.056f,
+                Color.WHITE,
                 Paint.Align.CENTER,
                 false,
             )
@@ -328,41 +387,35 @@ class LandscapeCockpitView(context: Context) : View(context) {
         val inner = radius * 0.69f
         canvas.save()
         canvas.clipCircle(cx, cy, inner)
+        val destination = RectF(cx - inner * 1.5f, cy - inner, cx + inner * 1.5f, cy + inner)
+        canvas.drawBitmap(dialLandscape, null, destination, bitmapPaint)
         paint.style = Paint.Style.FILL
-        paint.shader = LinearGradient(cx, cy - inner, cx, cy + inner, Color.parseColor("#17314C"), Color.parseColor("#05090E"), Shader.TileMode.CLAMP)
-        canvas.drawRect(cx - inner, cy - inner, cx + inner, cy + inner, paint)
-        paint.shader = null
-
-        val farMountains = Path().apply {
-            moveTo(cx - inner, cy + inner * 0.12f)
-            lineTo(cx - inner * 0.68f, cy - inner * 0.24f)
-            lineTo(cx - inner * 0.36f, cy - inner * 0.02f)
-            lineTo(cx - inner * 0.02f, cy - inner * 0.42f)
-            lineTo(cx + inner * 0.28f, cy - inner * 0.10f)
-            lineTo(cx + inner * 0.58f, cy - inner * 0.30f)
-            lineTo(cx + inner, cy + inner * 0.06f)
-            lineTo(cx + inner, cy + inner)
-            lineTo(cx - inner, cy + inner)
-            close()
-        }
-        paint.color = Color.parseColor("#344556")
-        canvas.drawPath(farMountains, paint)
-
-        val nearGround = Path().apply {
-            moveTo(cx - inner, cy + inner * 0.30f)
-            lineTo(cx - inner * 0.55f, cy + inner * 0.08f)
-            lineTo(cx - inner * 0.20f, cy + inner * 0.24f)
-            lineTo(cx + inner * 0.12f, cy + inner * 0.02f)
-            lineTo(cx + inner * 0.48f, cy + inner * 0.22f)
-            lineTo(cx + inner, cy + inner * 0.03f)
-            lineTo(cx + inner, cy + inner)
-            lineTo(cx - inner, cy + inner)
-            close()
-        }
-        paint.shader = LinearGradient(cx, cy, cx, cy + inner, Color.parseColor("#40362F"), Color.parseColor("#0C0B0B"), Shader.TileMode.CLAMP)
-        canvas.drawPath(nearGround, paint)
+        paint.shader = LinearGradient(
+            cx,
+            cy - inner,
+            cx,
+            cy + inner,
+            intArrayOf(Color.argb(90, 0, 0, 0), Color.argb(55, 0, 0, 0), Color.argb(170, 0, 0, 0)),
+            floatArrayOf(0f, 0.52f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawCircle(cx, cy, inner, paint)
         paint.shader = null
         canvas.restore()
+    }
+
+    private fun drawCalibrationScale(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.BUTT
+        repeat(13) { index ->
+            val x = cx + (index - 6) * radius * 0.045f
+            val height = radius * if (index == 6) 0.075f else if (index % 3 == 0) 0.052f else 0.032f
+            paint.color = if (index == 6) palette.accent else Color.WHITE
+            paint.strokeWidth = radius * if (index == 6) 0.012f else 0.006f
+            canvas.drawLine(x, cy - height / 2f, x, cy + height / 2f, paint)
+        }
+        paint.style = Paint.Style.FILL
+        drawText(canvas, "0°", cx, cy + radius * 0.10f, radius * 0.045f, Color.WHITE, Paint.Align.CENTER, false)
     }
 
     private fun drawUtvBitmap(canvas: Canvas, cx: Float, cy: Float, radius: Float, sideView: Boolean) {
