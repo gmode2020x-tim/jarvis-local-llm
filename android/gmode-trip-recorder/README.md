@@ -21,6 +21,7 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 - Samsung S24 barometer, linear-acceleration, and gyroscope summaries attached to each GPS point.
 - Battery percentage, charging state, and Wi-Fi/cellular/offline state.
 - App-private Room database that remains authoritative while disconnected.
+- User-selected export of any locally retained trip through Android's standard Save dialog. GPX supports navigation/trail apps, timestamped KML supports Google Earth, GeoJSON supports map/GIS tools, and CSV preserves every recorded telemetry field for spreadsheets.
 - Home Assistant upload through WorkManager with a network constraint, exponential retry, 500-point batches, and stable point IDs.
 - Home Assistant token encrypted with an AES-GCM key held by Android Keystore.
 - Active-trip distance, duration, speed, accuracy, point count, and pending-sync count.
@@ -53,6 +54,7 @@ On first use:
 8. Under **Appearance**, select a dashboard theme. Optionally enter a custom six-digit color such as `#D946EF`, then press **Save + Apply Theme**.
 9. Under **Left + right dashboard buttons**, edit each button's text, choose an icon, and select either a GMODE action or an installed app under **Opens**. Press **Save + Apply Side Buttons**.
 10. Under **Cockpit layout**, choose a vehicle and enable exactly two gauges from the catalog. Select **Automatic — phone sensors** for side during pitch and rear during roll, or lock a fixed view. Mount the phone in landscape with its back facing forward. To set level, park on flat ground, stop completely, leave the phone in its normal mount, and press **Calibrate Pitch + Roll Zero**.
+11. Under **Export recorded trip**, select a locally retained trip and GPX, KML, GeoJSON, or CSV. Press **Export trip file**, then choose a phone folder or cloud drive in Android's Save dialog.
 
 Geofence delivery is optimized for battery life, so an exit or return can be reported a short time after crossing the boundary. A 250 m home radius and 5 minute return delay are the defaults and are a practical starting point for driving.
 
@@ -80,7 +82,7 @@ This private sideload build is signed with this workstation's Android debug sign
 
 `UploadWorker` sends `POST /api/gmode_trip_recorder/mobile/upload` with a Home Assistant bearer token. Each request contains one trip and up to 500 points. Home Assistant acknowledges point IDs, and the app marks only those IDs synchronized. Retrying a request is safe.
 
-Locally saved rows are not deleted after upload. Release 1 therefore retains a complete phone-side trip history for recovery. Database export and retention controls are planned follow-ups.
+Locally saved rows are not deleted after upload, so the phone retains a complete trip history for recovery and file export. Retention and deletion controls remain planned follow-ups.
 
 ## Privacy
 

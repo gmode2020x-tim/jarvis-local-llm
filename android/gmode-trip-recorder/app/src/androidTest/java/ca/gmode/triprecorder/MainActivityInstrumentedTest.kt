@@ -106,6 +106,8 @@ class MainActivityInstrumentedTest {
                 val labels = collectText(content)
                 assertTrue(labels.any { it.contains("back of the phone facing forward", ignoreCase = true) })
                 assertTrue(labels.any { it == "CALIBRATE PITCH + ROLL ZERO" })
+                assertTrue(labels.any { it == "EXPORT RECORDED TRIP" })
+                assertTrue(labels.any { it == "EXPORT TRIP FILE" })
                 assertTrue(labels.none { it.contains("ROLL PERSPECTIVE") })
             }
         }

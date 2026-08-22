@@ -31,6 +31,12 @@ interface TripDao {
     @Query("SELECT * FROM trips WHERE needsSync = 1 ORDER BY updatedAtEpochMs ASC LIMIT 1")
     suspend fun getOldestDirtyTrip(): TripEntity?
 
+    @Query("SELECT * FROM trips ORDER BY updatedAtEpochMs DESC LIMIT :limit")
+    suspend fun getRecentTrips(limit: Int): List<TripEntity>
+
+    @Query("SELECT * FROM points WHERE tripId = :tripId ORDER BY sequence")
+    suspend fun getPointsForTrip(tripId: String): List<PointEntity>
+
     @Query("SELECT * FROM points WHERE tripId = :tripId AND synced = 0 ORDER BY sequence LIMIT :limit")
     suspend fun getPendingPoints(tripId: String, limit: Int): List<PointEntity>
 

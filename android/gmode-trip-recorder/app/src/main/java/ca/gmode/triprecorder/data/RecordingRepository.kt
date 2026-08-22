@@ -105,6 +105,12 @@ class RecordingRepository(private val dao: TripDao) {
     suspend fun activeTrip(): TripEntity? = dao.getActiveTrip()
 
     suspend fun pendingPointCount(): Int = dao.getTotalPendingPointCount()
+
+    suspend fun recentTrips(limit: Int = 100): List<TripEntity> = dao.getRecentTrips(limit.coerceIn(1, 250))
+
+    suspend fun trip(tripId: String): TripEntity? = dao.getTrip(tripId)
+
+    suspend fun tripPoints(tripId: String): List<PointEntity> = dao.getPointsForTrip(tripId)
 }
 
 fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

@@ -40,6 +40,9 @@ import androidx.lifecycle.lifecycleScope
 import ca.gmode.triprecorder.auto.AutoRecordingManager
 import ca.gmode.triprecorder.data.AppDatabase
 import ca.gmode.triprecorder.data.RecordingRepository
+import ca.gmode.triprecorder.data.TripEntity
+import ca.gmode.triprecorder.export.TripExportFormat
+import ca.gmode.triprecorder.export.TripFileExporter
 import ca.gmode.triprecorder.settings.AutoRecordingConfig
 import ca.gmode.triprecorder.settings.AutoRecordingSettings
 import ca.gmode.triprecorder.settings.AutoRecordingStateStore
@@ -68,8 +71,10 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
@@ -106,6 +111,8 @@ class MainActivity : AppCompatActivity() {
     private var showingSettings = false
     private var quickTripType = "off_road"
     private var requestedTripType: String? = null
+    private var pendingExportTripId: String? = null
+    private var pendingExportFormatId: String? = null
 
     private lateinit var tripName: EditText
     private lateinit var tripType: Spinner
@@ -153,8 +160,44 @@ class MainActivity : AppCompatActivity() {
         saveAutoAfterPermission = false
     }
 
+    private val exportFileLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val destination = result.data?.data
+        val tripId = pendingExportTripId
+        val format = TripExportFormat.fromId(pendingExportFormatId)
+        pendingExportTripId = null
+        pendingExportFormatId = null
+        if (result.resultCode != android.app.Activity.RESULT_OK || destination == null || tripId == null || format == null) {
+            return@registerForActivityResult
+        }
+        lifecycleScope.launch {
+            runCatching {
+                val trip = repository.trip(tripId) ?: error("The selected trip is no longer available")
+                val points = repository.tripPoints(tripId)
+                val document = withContext(Dispatchers.Default) { TripFileExporter.render(trip, points, format) }
+                withContext(Dispatchers.IO) {
+                    val stream = contentResolver.openOutputStream(destination, "w")
+                        ?: error("Android could not open the selected file")
+                    stream.bufferedWriter(Charsets.UTF_8).use { it.write(document) }
+                }
+                points.size
+            }.onSuccess { pointCount ->
+                Toast.makeText(
+                    this@MainActivity,
+                    "Exported $pointCount points as ${format.label.substringBefore(" — ")}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }.onFailure { error ->
+                Toast.makeText(this@MainActivity, "Export failed: ${error.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingExportTripId = savedInstanceState?.getString(STATE_EXPORT_TRIP_ID)
+        pendingExportFormatId = savedInstanceState?.getString(STATE_EXPORT_FORMAT_ID)
         repository = RecordingRepository(AppDatabase.get(this).tripDao())
         secureSettings = SecureSettings(this)
         syncStatus = SyncStatusStore(this)
@@ -183,6 +226,12 @@ class MainActivity : AppCompatActivity() {
             },
         )
         refreshContinuously()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_EXPORT_TRIP_ID, pendingExportTripId)
+        outState.putString(STATE_EXPORT_FORMAT_ID, pendingExportFormatId)
+        super.onSaveInstanceState(outState)
     }
 
     private fun enterImmersiveMode() {
@@ -412,6 +461,56 @@ class MainActivity : AppCompatActivity() {
         startButton = dashboardButton("START TRIP", filled = true)
         stopButton = dashboardButton("STOP + SYNC", filled = false).apply { isEnabled = false }
         content.addView(card("NEW TRIP", tripName, tripType, horizontalButtons(startButton, stopButton)))
+
+        val exportTripSpinner = Spinner(this).apply {
+            adapter = labelAdapter(listOf("Loading locally recorded trips…"))
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            isEnabled = false
+        }
+        val exportFormatSpinner = Spinner(this).apply {
+            adapter = labelAdapter(TripExportFormat.entries.map { it.label })
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+        }
+        val exportStatus = text("Trips remain available here after Home Assistant synchronization.", 11f, MUTED)
+        val exportButton = dashboardButton("EXPORT TRIP FILE", filled = true).apply { isEnabled = false }
+        var exportTrips: List<TripEntity> = emptyList()
+        content.addView(
+            card(
+                "EXPORT RECORDED TRIP",
+                labeledInput("RECORDED TRIP", exportTripSpinner),
+                labeledInput("FILE FORMAT", exportFormatSpinner),
+                exportButton,
+                exportStatus,
+                text(
+                    "GPX works with most navigation and trail apps. KML opens in Google Earth, GeoJSON works with mapping/GIS tools, and CSV preserves the detailed phone telemetry for spreadsheets.",
+                    11f,
+                    MUTED,
+                ),
+            ),
+        )
+        exportButton.setOnClickListener {
+            val trip = exportTrips.getOrNull(exportTripSpinner.selectedItemPosition)
+            if (trip == null) {
+                Toast.makeText(this, "No recorded trip is selected", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val format = TripExportFormat.entries[exportFormatSpinner.selectedItemPosition]
+            launchTripExport(trip, format)
+        }
+        lifecycleScope.launch {
+            exportTrips = repository.recentTrips()
+            if (exportTrips.isEmpty()) {
+                exportTripSpinner.adapter = labelAdapter(listOf("No locally recorded trips yet"))
+                exportTripSpinner.isEnabled = false
+                exportButton.isEnabled = false
+                exportStatus.text = "Record a trip before exporting."
+            } else {
+                exportTripSpinner.adapter = labelAdapter(exportTrips.map(::exportTripLabel))
+                exportTripSpinner.isEnabled = true
+                exportButton.isEnabled = true
+                exportStatus.text = "${exportTrips.size} most recent local trip${if (exportTrips.size == 1) "" else "s"} available"
+            }
+        }
 
         val automaticConfig = autoSettings.read()
         pendingHomeLatitude = automaticConfig.homeLatitude
@@ -752,6 +851,24 @@ class MainActivity : AppCompatActivity() {
             SyncScheduler.enqueue(this@MainActivity)
             if (::tripName.isInitialized) tripName.text.clear()
         }
+    }
+
+    private fun launchTripExport(trip: TripEntity, format: TripExportFormat) {
+        pendingExportTripId = trip.id
+        pendingExportFormatId = format.id
+        exportFileLauncher.launch(
+            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = format.mimeType
+                putExtra(Intent.EXTRA_TITLE, TripFileExporter.suggestedFileName(trip, format))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            },
+        )
+    }
+
+    private fun exportTripLabel(trip: TripEntity): String {
+        val status = if (trip.status == "active") "RECORDING" else trip.startAt.take(10)
+        return "${trip.title} • ${tripTypeLabel(trip.tripType)} • $status • ${trip.pointCount} pts"
     }
 
     private fun requestForegroundLocationPermissions() {
@@ -1422,6 +1539,8 @@ class MainActivity : AppCompatActivity() {
         private val TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm")
         private val TRIP_TYPE_LABELS = listOf("Street", "Off road", "Snow", "Water")
         private val TRIP_TYPE_VALUES = listOf("street", "off_road", "snow", "water")
+        private const val STATE_EXPORT_TRIP_ID = "pending_export_trip_id"
+        private const val STATE_EXPORT_FORMAT_ID = "pending_export_format_id"
     }
 
     private val BACKGROUND: Int get() = palette.background
