@@ -3,6 +3,7 @@ package ca.gmode.triprecorder
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -48,6 +49,10 @@ import ca.gmode.triprecorder.settings.DashboardPalette
 import ca.gmode.triprecorder.settings.DashboardConfig
 import ca.gmode.triprecorder.settings.DashboardSettings
 import ca.gmode.triprecorder.settings.SecureSettings
+import ca.gmode.triprecorder.settings.SideButtonConfig
+import ca.gmode.triprecorder.settings.SideButtonSettings
+import ca.gmode.triprecorder.settings.SideButtonSlot
+import ca.gmode.triprecorder.settings.SideButtonTarget
 import ca.gmode.triprecorder.sync.SyncScheduler
 import ca.gmode.triprecorder.sync.SyncStatusStore
 import ca.gmode.triprecorder.tracking.TrackingService
@@ -90,8 +95,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appearanceSettings: AppearanceSettings
     private lateinit var dashboardSettings: DashboardSettings
     private lateinit var liveTelemetryStore: LiveTelemetryStore
+    private lateinit var sideButtonSettings: SideButtonSettings
     private lateinit var palette: DashboardPalette
     private lateinit var dashboardConfig: DashboardConfig
+    private var sideButtonConfig: List<SideButtonConfig> = emptyList()
     private lateinit var landscapeCockpit: LandscapeCockpitView
     private var showingSettings = false
     private var quickTripType = "off_road"
@@ -154,6 +161,8 @@ class MainActivity : AppCompatActivity() {
         appearanceSettings = AppearanceSettings(this)
         dashboardSettings = DashboardSettings(this)
         liveTelemetryStore = LiveTelemetryStore(this)
+        sideButtonSettings = SideButtonSettings(this)
+        sideButtonConfig = sideButtonSettings.read()
         palette = appearanceSettings.palette()
         dashboardConfig = dashboardSettings.read()
         quickTripType = autoSettings.read().tripType
@@ -193,6 +202,7 @@ class MainActivity : AppCompatActivity() {
                     tripTypeLabel = tripTypeLabel(quickTripType),
                     automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                     readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
+                    sideButtons = sideButtonConfig,
                 ),
             )
             onAction = ::handleCockpitAction
@@ -237,7 +247,44 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, next.label, Toast.LENGTH_SHORT).show()
             }
             CockpitAction.BLUETOOTH -> handleBluetoothIndicatorTap()
+            CockpitAction.SIDE_LEFT_TOP -> launchSideButton(SideButtonSlot.LEFT_TOP)
+            CockpitAction.SIDE_LEFT_MIDDLE -> launchSideButton(SideButtonSlot.LEFT_MIDDLE)
+            CockpitAction.SIDE_LEFT_BOTTOM -> launchSideButton(SideButtonSlot.LEFT_BOTTOM)
+            CockpitAction.SIDE_RIGHT_TOP -> launchSideButton(SideButtonSlot.RIGHT_TOP)
+            CockpitAction.SIDE_RIGHT_MIDDLE -> launchSideButton(SideButtonSlot.RIGHT_MIDDLE)
+            CockpitAction.SIDE_RIGHT_BOTTOM -> launchSideButton(SideButtonSlot.RIGHT_BOTTOM)
         }
+    }
+
+    private fun launchSideButton(slot: SideButtonSlot) {
+        val config = sideButtonConfig.firstOrNull { it.slot == slot } ?: SideButtonSettings.DEFAULTS.getValue(slot)
+        when (config.target) {
+            SideButtonSettings.ACTION_START -> handleCockpitAction(CockpitAction.START)
+            SideButtonSettings.ACTION_STOP -> handleCockpitAction(CockpitAction.STOP)
+            SideButtonSettings.ACTION_TRIP_TYPE -> handleCockpitAction(CockpitAction.TRIP_TYPE)
+            SideButtonSettings.ACTION_AUTO, SideButtonSettings.ACTION_SETTINGS -> showSettingsScreen()
+            SideButtonSettings.ACTION_SYNC -> handleCockpitAction(CockpitAction.SYNC)
+            SideButtonSettings.ACTION_HOME_ASSISTANT -> showSettingsScreen()
+            else -> launchInstalledApp(config)
+        }
+    }
+
+    private fun launchInstalledApp(config: SideButtonConfig) {
+        val flattened = config.target.removePrefix(SideButtonSettings.APP_PREFIX)
+        val component = ComponentName.unflattenFromString(flattened)
+        if (component == null) {
+            Toast.makeText(this, "${config.label} is not configured", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val launchIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            setComponent(component)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { startActivity(launchIntent) }
+            .onFailure {
+                Toast.makeText(this, "${config.label} is no longer installed — choose another app in Settings", Toast.LENGTH_LONG).show()
+            }
     }
 
     private fun handleBluetoothIndicatorTap() {
@@ -427,6 +474,79 @@ class MainActivity : AppCompatActivity() {
                 ),
             ),
         )
+
+        sideButtonConfig = sideButtonSettings.read()
+        val installedTargets = discoverSideButtonTargets()
+        val targetOptions = (SideButtonSettings.BUILT_IN_TARGETS + installedTargets + sideButtonConfig.mapNotNull { config ->
+            if (config.target.startsWith(SideButtonSettings.APP_PREFIX) && installedTargets.none { it.id == config.target }) {
+                SideButtonTarget(config.target, "Missing app — ${config.label}")
+            } else null
+        }).distinctBy { it.id }
+        val buttonLabels = mutableMapOf<SideButtonSlot, EditText>()
+        val buttonTargets = mutableMapOf<SideButtonSlot, Spinner>()
+        val buttonIcons = mutableMapOf<SideButtonSlot, Spinner>()
+        val sideButtonRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val sideBySlot = sideButtonConfig.associateBy { it.slot }
+        SideButtonSlot.entries.forEach { slot ->
+            val config = sideBySlot[slot] ?: SideButtonSettings.DEFAULTS.getValue(slot)
+            val labelInput = editText("Button text").apply {
+                setText(config.label)
+                maxLines = 1
+            }
+            val targetSpinner = Spinner(this).apply {
+                adapter = labelAdapter(targetOptions.map { it.label })
+                backgroundTintList = ColorStateList.valueOf(ORANGE)
+                setSelection(targetOptions.indexOfFirst { it.id == config.target }.coerceAtLeast(0))
+            }
+            val iconSpinner = Spinner(this).apply {
+                adapter = labelAdapter(SideButtonSettings.ICONS.map { it.label })
+                backgroundTintList = ColorStateList.valueOf(ORANGE)
+                setSelection(SideButtonSettings.ICONS.indexOfFirst { it.id == config.iconId }.coerceAtLeast(0))
+            }
+            buttonLabels[slot] = labelInput
+            buttonTargets[slot] = targetSpinner
+            buttonIcons[slot] = iconSpinner
+            sideButtonRows.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(text(slot.label.uppercase(), 11f, Color.WHITE, bold = true).withBottom(dp(5)))
+                    addView(
+                        horizontalViews(
+                            labeledInput("TEXT", labelInput),
+                            labeledInput("ICON", iconSpinner),
+                        ).withBottom(dp(5)),
+                    )
+                    addView(labeledInput("OPENS", targetSpinner).withBottom(dp(11)))
+                },
+            )
+        }
+        val saveSideButtons = dashboardButton("SAVE + APPLY SIDE BUTTONS", filled = true)
+        content.addView(
+            card(
+                "LEFT + RIGHT DASHBOARD BUTTONS",
+                text(
+                    "Set the text, icon, and action for every side button. App targets include launchable apps currently installed on this phone.",
+                    11f,
+                    MUTED,
+                ),
+                sideButtonRows,
+                saveSideButtons,
+            ),
+        )
+        saveSideButtons.setOnClickListener {
+            val saved = SideButtonSlot.entries.map { slot ->
+                SideButtonConfig(
+                    slot = slot,
+                    label = buttonLabels.getValue(slot).text.toString(),
+                    target = targetOptions[buttonTargets.getValue(slot).selectedItemPosition].id,
+                    iconId = SideButtonSettings.ICONS[buttonIcons.getValue(slot).selectedItemPosition].id,
+                ).normalized()
+            }
+            sideButtonSettings.save(saved)
+            sideButtonConfig = sideButtonSettings.read()
+            Toast.makeText(this, "Dashboard side buttons applied", Toast.LENGTH_SHORT).show()
+            showCockpitScreen()
+        }
 
         val vehicleSpinner = Spinner(this).apply {
             adapter = labelAdapter(DashboardSettings.VEHICLES.map { it.label })
@@ -800,6 +920,7 @@ class MainActivity : AppCompatActivity() {
                                 "${active.title.uppercase()} • ${formatDuration(duration)} • ${"%.1f".format(active.distanceMeters / 1000)} KM"
                             },
                             readings = dashboardConfig.gaugeIds.map { readingFor(it, active, telemetry, duration) },
+                            sideButtons = sideButtonConfig,
                         ),
                     )
                 }
@@ -1108,6 +1229,23 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(14), dp(if (dropdown) 14 else 10), dp(14), dp(if (dropdown) 14 else 10))
             setBackgroundColor(if (dropdown) PANEL else Color.TRANSPARENT)
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun discoverSideButtonTargets(): List<SideButtonTarget> {
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(launcherIntent, 0)
+            .mapNotNull { result ->
+                val activity = result.activityInfo ?: return@mapNotNull null
+                val component = ComponentName(activity.packageName, activity.name)
+                val appLabel = result.loadLabel(packageManager).toString().trim().ifBlank { activity.packageName }
+                SideButtonTarget(
+                    id = SideButtonSettings.APP_PREFIX + component.flattenToString(),
+                    label = "APP — $appLabel",
+                )
+            }
+            .distinctBy { it.id }
+            .sortedBy { it.label.lowercase() }
     }
 
     private fun stateList(enabled: Int, disabled: Int): ColorStateList = ColorStateList(

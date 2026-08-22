@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import ca.gmode.triprecorder.settings.DashboardConfig
 import ca.gmode.triprecorder.settings.DashboardSettings
+import ca.gmode.triprecorder.settings.SideButtonConfig
+import ca.gmode.triprecorder.settings.SideButtonSettings
+import ca.gmode.triprecorder.settings.SideButtonSlot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,6 +102,37 @@ class MainActivityInstrumentedTest {
                     cockpit.cornerIndicatorSnapshot(),
                 )
             }
+        }
+    }
+
+    @Test
+    fun configuredLabelsTargetsAndIconsReachAllSixDashboardButtons() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val settings = SideButtonSettings(context)
+        val original = settings.read()
+        val custom = SideButtonSlot.entries.mapIndexed { index, slot ->
+            SideButtonConfig(
+                slot = slot,
+                label = "BUTTON ${index + 1}",
+                target = if (index == 0) {
+                    "app:ca.gmode.triprecorder/.MainActivity"
+                } else {
+                    SideButtonSettings.BUILT_IN_TARGETS[index].id
+                },
+                iconId = SideButtonSettings.ICONS[index].id,
+            )
+        }
+        settings.save(custom)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
+                    val cockpit = root.getChildAt(0) as LandscapeCockpitView
+                    assertEquals(custom.map { it.normalized() }, cockpit.activeSideButtons())
+                }
+            }
+        } finally {
+            settings.save(original)
         }
     }
 }

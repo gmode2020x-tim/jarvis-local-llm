@@ -1,6 +1,7 @@
 package ca.gmode.triprecorder
 
 import android.content.Context
+import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.BitmapShader
@@ -12,9 +13,13 @@ import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.drawable.Drawable
 import android.view.MotionEvent
 import android.view.View
 import ca.gmode.triprecorder.settings.DashboardPalette
+import ca.gmode.triprecorder.settings.SideButtonConfig
+import ca.gmode.triprecorder.settings.SideButtonSettings
+import ca.gmode.triprecorder.settings.SideButtonSlot
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -51,6 +56,7 @@ data class CockpitState(
     val batteryTemperatureC: Double? = null,
     val tripDurationLabel: String = "0:00",
     val readings: List<CockpitReading> = emptyList(),
+    val sideButtons: List<SideButtonConfig> = SideButtonSettings.DEFAULTS.values.toList(),
 )
 
 data class CornerIndicatorSnapshot(
@@ -75,6 +81,12 @@ enum class CockpitAction {
     THEME,
     HOME_ASSISTANT,
     BLUETOOTH,
+    SIDE_LEFT_TOP,
+    SIDE_LEFT_MIDDLE,
+    SIDE_LEFT_BOTTOM,
+    SIDE_RIGHT_TOP,
+    SIDE_RIGHT_MIDDLE,
+    SIDE_RIGHT_BOTTOM,
 }
 
 class LandscapeCockpitView(context: Context) : View(context) {
@@ -90,6 +102,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val referenceMiddleRight: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_middle_right) }
     private val referenceFooter: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_footer) }
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
+    private val activityIconCache = mutableMapOf<String, Bitmap?>()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
     private var contentScale = 1f
@@ -120,6 +133,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     internal fun activeGaugeTitles(): List<String> = state.readings.map { it.title }
+
+    internal fun activeSideButtons(): List<SideButtonConfig> = state.sideButtons
 
     internal fun cornerIndicatorSnapshot(): CornerIndicatorSnapshot = CornerIndicatorSnapshot(
         wifiConnected = state.wifiConnected,
@@ -168,12 +183,12 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun configureReferenceTouchZones() {
-        touchZones[CockpitAction.START] = RectF(36f, 98f, 428f, 212f)
-        touchZones[CockpitAction.TRIP_TYPE] = RectF(36f, 216f, 428f, 336f)
-        touchZones[CockpitAction.AUTO] = RectF(36f, 338f, 428f, 464f)
-        touchZones[CockpitAction.STOP] = RectF(852f, 98f, 1244f, 212f)
-        touchZones[CockpitAction.SYNC] = RectF(852f, 216f, 1244f, 336f)
-        touchZones[CockpitAction.HOME_ASSISTANT] = RectF(852f, 338f, 1244f, 464f)
+        touchZones[CockpitAction.SIDE_LEFT_TOP] = RectF(36f, 98f, 428f, 212f)
+        touchZones[CockpitAction.SIDE_LEFT_MIDDLE] = RectF(36f, 216f, 428f, 336f)
+        touchZones[CockpitAction.SIDE_LEFT_BOTTOM] = RectF(36f, 338f, 428f, 464f)
+        touchZones[CockpitAction.SIDE_RIGHT_TOP] = RectF(852f, 98f, 1244f, 212f)
+        touchZones[CockpitAction.SIDE_RIGHT_MIDDLE] = RectF(852f, 216f, 1244f, 336f)
+        touchZones[CockpitAction.SIDE_RIGHT_BOTTOM] = RectF(852f, 338f, 1244f, 464f)
         touchZones[CockpitAction.THEME] = RectF(996f, 468f, 1074f, 586f)
         touchZones[CockpitAction.SETTINGS] = RectF(1074f, 468f, 1164f, 586f)
         touchZones[CockpitAction.BLUETOOTH] = RectF(282f, 16f, 343f, 92f)
@@ -188,7 +203,116 @@ class LandscapeCockpitView(context: Context) : View(context) {
         drawReferenceText(canvas, reading.title, 640f, 536f, 24f, Color.WHITE, true)
         val detail = if (reading.subtitle.isNotBlank()) reading.subtitle else state.tripLabel
         drawReferenceText(canvas, detail, 640f, 565f, 18f, palette.accent, true)
+        drawConfiguredSideButtons(canvas)
         drawLiveCornerIndicators(canvas)
+    }
+
+    private fun drawConfiguredSideButtons(canvas: Canvas) {
+        val bySlot = state.sideButtons.associateBy { it.slot }
+        val rows = listOf(
+            Triple(SideButtonSlot.LEFT_TOP, 155f, true),
+            Triple(SideButtonSlot.LEFT_MIDDLE, 276f, true),
+            Triple(SideButtonSlot.LEFT_BOTTOM, 397f, true),
+            Triple(SideButtonSlot.RIGHT_TOP, 155f, false),
+            Triple(SideButtonSlot.RIGHT_MIDDLE, 276f, false),
+            Triple(SideButtonSlot.RIGHT_BOTTOM, 397f, false),
+        )
+        rows.forEach { (slot, y, leftSide) ->
+            val config = bySlot[slot] ?: SideButtonSettings.DEFAULTS.getValue(slot)
+            val labelX = if (leftSide) 170f else 1110f
+            val iconX = if (leftSide) 383f else 912f
+            drawFittedReferenceText(canvas, config.label.uppercase(), labelX, y + 9f, 178f)
+            drawSideButtonIcon(canvas, config, iconX, y, 30f)
+        }
+    }
+
+    private fun drawFittedReferenceText(canvas: Canvas, value: String, x: Float, y: Float, maxWidth: Float) {
+        paint.typeface = android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD)
+        paint.textSize = 24f
+        while (paint.textSize > 15f && paint.measureText(value) > maxWidth) paint.textSize -= 1f
+        drawReferenceText(canvas, value, x, y, paint.textSize, Color.WHITE, true)
+    }
+
+    private fun drawSideButtonIcon(canvas: Canvas, config: SideButtonConfig, cx: Float, cy: Float, size: Float) {
+        if (config.iconId == "app" && drawTargetAppIcon(canvas, config.target, cx, cy, size * 1.85f)) return
+
+        paint.shader = null
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        val path = Path()
+        when (config.iconId) {
+            "radio" -> {
+                canvas.drawRoundRect(RectF(cx - size, cy - size * .55f, cx + size, cy + size * .65f), 4f, 4f, paint)
+                canvas.drawCircle(cx + size * .45f, cy + size * .05f, size * .28f, paint)
+                canvas.drawLine(cx - size * .7f, cy - size * .7f, cx + size * .65f, cy - size * 1.15f, paint)
+                canvas.drawLine(cx - size * .65f, cy - size * .15f, cx - size * .12f, cy - size * .15f, paint)
+            }
+            "navigation" -> {
+                path.moveTo(cx, cy - size)
+                path.lineTo(cx + size * .62f, cy + size)
+                path.lineTo(cx, cy + size * .62f)
+                path.lineTo(cx - size * .62f, cy + size)
+                path.close()
+                canvas.drawPath(path, paint)
+            }
+            "music" -> {
+                canvas.drawLine(cx - size * .15f, cy - size * .75f, cx + size * .72f, cy - size, paint)
+                canvas.drawLine(cx - size * .15f, cy - size * .75f, cx - size * .15f, cy + size * .55f, paint)
+                canvas.drawLine(cx + size * .72f, cy - size, cx + size * .72f, cy + size * .3f, paint)
+                paint.style = Paint.Style.FILL
+                canvas.drawOval(RectF(cx - size * .85f, cy + size * .35f, cx - size * .08f, cy + size), paint)
+                canvas.drawOval(RectF(cx + size * .02f, cy + size * .1f, cx + size * .8f, cy + size * .75f), paint)
+            }
+            "phone" -> {
+                paint.strokeWidth = size * .28f
+                path.moveTo(cx - size * .58f, cy - size * .62f)
+                path.cubicTo(cx - size * .85f, cy - size * .08f, cx + size * .18f, cy + size * .85f, cx + size * .65f, cy + size * .55f)
+                canvas.drawPath(path, paint)
+                paint.strokeWidth = size * .36f
+                canvas.drawLine(cx - size * .68f, cy - size * .78f, cx - size * .40f, cy - size * .50f, paint)
+                canvas.drawLine(cx + size * .48f, cy + size * .37f, cx + size * .78f, cy + size * .66f, paint)
+            }
+            "internet" -> drawGlobeStatus(canvas, cx, cy, size * .85f, Color.WHITE)
+            "apps" -> {
+                paint.style = Paint.Style.FILL
+                for (row in -1..1) for (column in -1..1) {
+                    val x = cx + column * size * .72f
+                    val y = cy + row * size * .72f
+                    canvas.drawRoundRect(RectF(x - size * .18f, y - size * .18f, x + size * .18f, y + size * .18f), 3f, 3f, paint)
+                }
+            }
+            "play" -> drawControlIcon(canvas, CockpitAction.START, cx, cy, size)
+            "stop" -> drawControlIcon(canvas, CockpitAction.STOP, cx, cy, size)
+            "sync" -> drawControlIcon(canvas, CockpitAction.SYNC, cx, cy, size)
+            "home" -> drawControlIcon(canvas, CockpitAction.HOME_ASSISTANT, cx, cy, size)
+            "settings" -> drawControlIcon(canvas, CockpitAction.SETTINGS, cx, cy, size)
+            else -> drawControlIcon(canvas, CockpitAction.SETTINGS, cx, cy, size)
+        }
+        paint.strokeCap = Paint.Cap.BUTT
+    }
+
+    private fun drawTargetAppIcon(canvas: Canvas, target: String, cx: Float, cy: Float, size: Float): Boolean {
+        if (!target.startsWith(SideButtonSettings.APP_PREFIX)) return false
+        val flattened = target.removePrefix(SideButtonSettings.APP_PREFIX)
+        val bitmap = activityIconCache.getOrPut(flattened) {
+            val component = ComponentName.unflattenFromString(flattened) ?: return@getOrPut null
+            runCatching { context.packageManager.getActivityIcon(component).toBitmap() }.getOrNull()
+        } ?: return false
+        canvas.drawBitmap(bitmap, null, RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f), bitmapPaint)
+        return true
+    }
+
+    private fun Drawable.toBitmap(): Bitmap {
+        val targetWidth = intrinsicWidth.takeIf { it > 0 } ?: 96
+        val targetHeight = intrinsicHeight.takeIf { it > 0 } ?: 96
+        return Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888).also { bitmap ->
+            val iconCanvas = Canvas(bitmap)
+            setBounds(0, 0, iconCanvas.width, iconCanvas.height)
+            draw(iconCanvas)
+        }
     }
 
     private fun drawLiveCornerIndicators(canvas: Canvas) {
@@ -721,6 +845,13 @@ class LandscapeCockpitView(context: Context) : View(context) {
                 canvas.drawPath(path, paint)
             }
             CockpitAction.BLUETOOTH -> drawBluetoothStatus(canvas, cx, cy, size * 0.72f, Color.WHITE)
+            CockpitAction.SIDE_LEFT_TOP,
+            CockpitAction.SIDE_LEFT_MIDDLE,
+            CockpitAction.SIDE_LEFT_BOTTOM,
+            CockpitAction.SIDE_RIGHT_TOP,
+            CockpitAction.SIDE_RIGHT_MIDDLE,
+            CockpitAction.SIDE_RIGHT_BOTTOM,
+            -> Unit
         }
         paint.strokeCap = Paint.Cap.BUTT
     }

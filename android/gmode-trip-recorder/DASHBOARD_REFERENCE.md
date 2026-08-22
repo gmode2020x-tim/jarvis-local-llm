@@ -7,8 +7,8 @@ The supplied dashboard image is the authoritative visual layout and artwork sour
 - The app uses lossless PNG pieces cut directly from the supplied image rather than recreating its surfaces with approximate vector drawing.
 - The five pieces are the top canopy, left middle, centre middle, right middle, and footer.
 - Reassembling the pieces on the 1280 × 592 design grid is pixel-identical to the cleaned source master.
-- The clock, gauge name/value, footer readout, and red corner indicators are cleared from the source artwork and redrawn from live application state.
-- The original visible controls use invisible touch regions mapped to trip-recorder actions; the artwork itself is not distorted or reflowed.
+- The clock, gauge name/value, footer readout, red corner indicators, and six side-button labels/icons are cleared from the source artwork and redrawn from live application state.
+- The original side panels use invisible touch regions mapped to the six saved button configurations; the artwork itself is not distorted or reflowed.
 
 ## Source geometry
 
@@ -50,9 +50,9 @@ The supplied dashboard image is the authoritative visual layout and artwork sour
 - White gauge title and scale labels; large red live value.
 - Zero/calibration scale at the bottom of pitch and roll gauges.
 
-## Functional mapping
+## Configurable side controls
 
-The reference artwork and its visible labels are retained unchanged. Their touch regions are mapped to trip-recorder operations as follows:
+The initial labels and mappings match the reference artwork:
 
 - `RADIO`: start recording.
 - `NAVI`: cycle trip type.
@@ -60,6 +60,8 @@ The reference artwork and its visible labels are retained unchanged. Their touch
 - `PHONE`: stop recording.
 - `INTERNET`: synchronize queued data.
 - `APPS`: Home Assistant settings.
+- Each of these six slots can be assigned a custom label, one of the dashboard icon styles, the actual target application's icon, and either a GMODE action or any installed launchable application.
+- App targets are stored as an exact Android launcher component. If an app is removed, tapping its button reports that it is unavailable and the settings editor marks the saved target as missing until the user chooses another app.
 - Footer centre arrows: previous/next configured gauge.
 - Footer utilities: theme and settings.
 

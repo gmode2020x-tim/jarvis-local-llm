@@ -4,8 +4,9 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 
 ## Current capabilities
 
-- Full-screen landscape automotive cockpit rebuilt from lossless pieces cut directly from the authoritative 1280×592 reference image. Its original canopy, leather panels, main-control icons, seams, gauge artwork, footer and proportions are preserved instead of approximated with canvas shapes. Live clock, gauge text, and corner indicators are drawn over the source artwork. The grid scales uniformly and is symmetrically letterboxed when necessary, so every phone preserves the same geometry and circular gauge.
+- Full-screen landscape automotive cockpit rebuilt from lossless pieces cut directly from the authoritative 1280×592 reference image. Its original canopy, leather panels, seams, gauge artwork, footer and proportions are preserved instead of approximated with canvas shapes. Live clock, gauge text, editable side controls, and corner indicators are drawn over the source artwork. The grid scales uniformly and is symmetrically letterboxed when necessary, so every phone preserves the same geometry and circular gauge.
 - Live corner indicators report Wi-Fi/internet validation, GPS fix and satellite count, Bluetooth state, Home Assistant availability, queued uploads, phone battery temperature/charge/percentage, recording state, trip type, and elapsed trip time. Theme and settings icons remain functional controls.
+- All three left and three right dashboard buttons are user-configurable. Each has editable text, a choice of dashboard icons or the target app's real icon, and can open any launchable app installed on the phone or run a built-in GMODE recording, trip-type, synchronization, or settings action.
 - User-selectable Reference Red, GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color. Reference Red is the first-install default.
 - Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Choose exactly two active gauges and use the dashboard footer arrows to switch the central instrument between them.
 - One-touch pitch/roll zeroing compensates for the phone mount angle.
@@ -49,7 +50,8 @@ On first use:
 6. For automatic recording, stand at home, press **Use current location**, enable **Start when I leave home**, adjust the distance/time fields, and press **Save auto settings**.
 7. When Android opens the app settings, choose **Permissions > Location > Allow all the time**. Return to the app and press **Save auto settings** again. The status must say **Armed** before relying on automatic departure recording.
 8. Under **Appearance**, select a dashboard theme. Optionally enter a custom six-digit color such as `#D946EF`, then press **Save + Apply Theme**.
-9. Under **Cockpit layout**, choose a vehicle and enable exactly two gauges from the catalog. Use the arrows to place one in the large left instrument and the other in the large right instrument.
+9. Under **Left + right dashboard buttons**, edit each button's text, choose an icon, and select either a GMODE action or an installed app under **Opens**. Press **Save + Apply Side Buttons**.
+10. Under **Cockpit layout**, choose a vehicle and enable exactly two gauges from the catalog. Use the arrows to place one in the large left instrument and the other in the large right instrument.
 
 Geofence delivery is optimized for battery life, so an exit or return can be reported a short time after crossing the boundary. A 250 m home radius and 5 minute return delay are the defaults and are a practical starting point for driving.
 

@@ -43,6 +43,18 @@ def create_dynamic_master(source: Path, output: Path) -> None:
         ((925, 24, 1132, 88), False, True),  # network, temperature and queue
         ((112, 480, 330, 568), False, True), # GPS/recording/type/timer
         ((916, 480, 1145, 568), False, True),# battery, theme and settings
+        ((100, 125, 278, 184), True, False), # left top label
+        ((100, 245, 282, 305), True, False), # left middle label
+        ((96, 365, 282, 430), True, False),  # left bottom label
+        ((338, 112, 423, 201), True, False), # left top icon
+        ((328, 228, 423, 321), True, False), # left middle icon
+        ((330, 344, 425, 447), True, False), # left bottom icon
+        ((858, 112, 966, 201), True, False), # right top icon
+        ((854, 228, 966, 321), True, False), # right middle icon
+        ((850, 344, 966, 447), True, False), # right bottom icon
+        ((997, 125, 1205, 184), True, False),# right top label
+        ((986, 245, 1212, 305), True, False),# right middle label
+        ((997, 365, 1205, 430), True, False),# right bottom label
     )
     for (left, top, right, bottom), remove_white, remove_red in regions:
         roi = image[top:bottom, left:right]
