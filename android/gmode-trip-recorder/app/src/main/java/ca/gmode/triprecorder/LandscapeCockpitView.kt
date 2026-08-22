@@ -60,6 +60,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val utvFront: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_front) }
     private val dialLandscape: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.dial_mountain_landscape) }
     private val dashboardLeather: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.dashboard_black_leather) }
+    private val referenceTop: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_top) }
+    private val referenceMiddleLeft: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_middle_left) }
+    private val referenceMiddleCenter: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_middle_center) }
+    private val referenceMiddleRight: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_middle_right) }
+    private val referenceFooter: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_footer) }
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
@@ -110,17 +115,55 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.scale(contentScale, contentScale)
         val w = DESIGN_WIDTH
         val h = DESIGN_HEIGHT
-        paint.color = Color.BLACK
-        paint.style = Paint.Style.FILL
-        canvas.drawRect(0f, 0f, w, h, paint)
-        drawDashboardTexture(canvas, w, h)
-        drawHeader(canvas, w, h)
-        drawSideControls(canvas, w, h)
+        drawReferenceArtwork(canvas)
+        configureReferenceTouchZones()
         val reading = state.readings.getOrNull(selectedGaugeIndex) ?: CockpitReading("PITCH", "--", "degrees")
-        drawFooter(canvas, w, h, reading)
-        val heroRadius = min(w * 0.166f, h * 0.360f)
-        drawHeroGauge(canvas, w * 0.500f, h * 0.470f, heroRadius, reading, sideView = selectedGaugeIndex % 2 == 0)
+        drawLiveReferenceContent(canvas, reading)
         canvas.restore()
+    }
+
+    private fun drawReferenceArtwork(canvas: Canvas) {
+        bitmapPaint.isFilterBitmap = true
+        canvas.drawBitmap(referenceTop, null, RectF(0f, 0f, 1280f, 98f), bitmapPaint)
+        canvas.drawBitmap(referenceMiddleLeft, null, RectF(0f, 98f, 428f, 466f), bitmapPaint)
+        canvas.drawBitmap(referenceMiddleCenter, null, RectF(428f, 98f, 852f, 466f), bitmapPaint)
+        canvas.drawBitmap(referenceMiddleRight, null, RectF(852f, 98f, 1280f, 466f), bitmapPaint)
+        canvas.drawBitmap(referenceFooter, null, RectF(0f, 466f, 1280f, 592f), bitmapPaint)
+    }
+
+    private fun configureReferenceTouchZones() {
+        touchZones[CockpitAction.START] = RectF(36f, 98f, 428f, 212f)
+        touchZones[CockpitAction.TRIP_TYPE] = RectF(36f, 216f, 428f, 336f)
+        touchZones[CockpitAction.AUTO] = RectF(36f, 338f, 428f, 464f)
+        touchZones[CockpitAction.STOP] = RectF(852f, 98f, 1244f, 212f)
+        touchZones[CockpitAction.SYNC] = RectF(852f, 216f, 1244f, 336f)
+        touchZones[CockpitAction.HOME_ASSISTANT] = RectF(852f, 338f, 1244f, 464f)
+        touchZones[CockpitAction.THEME] = RectF(996f, 468f, 1074f, 586f)
+        touchZones[CockpitAction.SETTINGS] = RectF(1074f, 468f, 1164f, 586f)
+        previousGaugeZone.set(410f, 468f, 530f, 590f)
+        nextGaugeZone.set(750f, 468f, 870f, 590f)
+    }
+
+    private fun drawLiveReferenceContent(canvas: Canvas, reading: CockpitReading) {
+        drawReferenceText(canvas, state.time, 640f, 55f, 44f, Color.WHITE, true)
+        drawReferenceText(canvas, reading.title.uppercase(), 640f, 136f, 18f, Color.WHITE, true)
+        drawReferenceText(canvas, reading.value, 640f, 402f, 38f, palette.accent, true)
+        drawReferenceText(canvas, reading.title, 640f, 536f, 24f, Color.WHITE, true)
+        val detail = if (reading.subtitle.isNotBlank()) reading.subtitle else state.tripLabel
+        drawReferenceText(canvas, detail, 640f, 565f, 18f, palette.accent, true)
+    }
+
+    private fun drawReferenceText(canvas: Canvas, value: String, x: Float, y: Float, size: Float, color: Int, bold: Boolean) {
+        paint.style = Paint.Style.FILL
+        paint.shader = null
+        paint.color = color
+        paint.textAlign = Paint.Align.CENTER
+        paint.textSize = size
+        paint.typeface = android.graphics.Typeface.create(
+            "sans-serif-condensed",
+            if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL,
+        )
+        canvas.drawText(value, x, y, paint)
     }
 
     private fun drawDashboardTexture(canvas: Canvas, w: Float, h: Float) {

@@ -2,6 +2,7 @@ package ca.gmode.triprecorder
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -14,6 +15,24 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityInstrumentedTest {
+    @Test
+    fun referenceArtworkPiecesRetainExactDesignDimensions() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val expected = listOf(
+            R.drawable.reference_dashboard_top to (1280 to 98),
+            R.drawable.reference_dashboard_middle_left to (428 to 368),
+            R.drawable.reference_dashboard_middle_center to (424 to 368),
+            R.drawable.reference_dashboard_middle_right to (428 to 368),
+            R.drawable.reference_dashboard_footer to (1280 to 126),
+        )
+
+        expected.forEach { (resourceId, dimensions) ->
+            val bitmap = BitmapFactory.decodeResource(context.resources, resourceId)
+            assertEquals(dimensions.first, bitmap.width)
+            assertEquals(dimensions.second, bitmap.height)
+        }
+    }
+
     @Test
     fun launchesFullScreenLandscapeCockpit() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

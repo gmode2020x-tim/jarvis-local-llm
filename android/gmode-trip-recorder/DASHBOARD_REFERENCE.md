@@ -1,6 +1,14 @@
 # Dashboard reference specification
 
-The supplied dashboard image is the authoritative visual layout for the Android cockpit.
+The supplied dashboard image is the authoritative visual layout and artwork source for the Android cockpit.
+
+## Source-art rendering
+
+- The app uses lossless PNG pieces cut directly from the supplied image rather than recreating its surfaces with approximate vector drawing.
+- The five pieces are the top canopy, left middle, centre middle, right middle, and footer.
+- Reassembling the pieces on the 1280 × 592 design grid is pixel-identical to the cleaned source master.
+- Only the clock, gauge name/value, and footer readout are cleared from the source artwork and redrawn from live application state.
+- The original visible controls use invisible touch regions mapped to trip-recorder actions; the artwork itself is not distorted or reflowed.
 
 ## Source geometry
 
@@ -44,13 +52,16 @@ The supplied dashboard image is the authoritative visual layout for the Android 
 
 ## Functional mapping
 
-The reference layout is retained while labels reflect the trip recorder rather than pretending to provide unrelated radio or phone features.
+The reference artwork and its visible labels are retained unchanged. Their touch regions are mapped to trip-recorder operations as follows:
 
-- Left rows: Start/recording, trip type, automatic recording.
-- Right rows: Stop, synchronize, Home Assistant.
+- `RADIO`: start recording.
+- `NAVI`: cycle trip type.
+- `MUSIC`: automatic-recording settings.
+- `PHONE`: stop recording.
+- `INTERNET`: synchronize queued data.
+- `APPS`: Home Assistant settings.
 - Footer centre arrows: previous/next configured gauge.
 - Footer utilities: theme and settings.
-- Header/footer status: GPS, pending upload count, Home Assistant, vehicle, and trip status.
 
 ## Responsive acceptance criteria
 
