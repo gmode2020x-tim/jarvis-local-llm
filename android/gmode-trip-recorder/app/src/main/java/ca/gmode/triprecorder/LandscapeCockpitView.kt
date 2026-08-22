@@ -11,6 +11,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
@@ -20,6 +21,7 @@ import ca.gmode.triprecorder.settings.DashboardPalette
 import ca.gmode.triprecorder.settings.SideButtonConfig
 import ca.gmode.triprecorder.settings.SideButtonSettings
 import ca.gmode.triprecorder.settings.SideButtonSlot
+import ca.gmode.triprecorder.settings.DashboardSettings
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -57,6 +59,10 @@ data class CockpitState(
     val tripDurationLabel: String = "0:00",
     val readings: List<CockpitReading> = emptyList(),
     val sideButtons: List<SideButtonConfig> = SideButtonSettings.DEFAULTS.values.toList(),
+    val vehicleViewModeId: String = DashboardSettings.DEFAULT_VIEW_MODE_ID,
+    val rollViewId: String = DashboardSettings.DEFAULT_ROLL_VIEW_ID,
+    val pitchDegrees: Double? = null,
+    val rollDegrees: Double? = null,
 )
 
 data class CornerIndicatorSnapshot(
@@ -103,6 +109,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val referenceFooter: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_footer) }
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
     private val activityIconCache = mutableMapOf<String, Bitmap?>()
+    private val vehicleArtworkCache = mutableMapOf<String, VehicleArtwork>()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
     private var contentScale = 1f
@@ -197,6 +204,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun drawLiveReferenceContent(canvas: Canvas, reading: CockpitReading) {
+        drawDynamicGaugeScene(canvas, reading)
         drawReferenceText(canvas, state.time, 640f, 55f, 44f, Color.WHITE, true)
         drawReferenceText(canvas, reading.title.uppercase(), 640f, 136f, 18f, Color.WHITE, true)
         drawReferenceText(canvas, reading.value, 640f, 402f, 38f, palette.accent, true)
@@ -205,6 +213,117 @@ class LandscapeCockpitView(context: Context) : View(context) {
         drawReferenceText(canvas, detail, 640f, 565f, 18f, palette.accent, true)
         drawConfiguredSideButtons(canvas)
         drawLiveCornerIndicators(canvas)
+    }
+
+    private data class VehicleArtwork(val bitmap: Bitmap, val contentBounds: Rect)
+
+    private fun drawDynamicGaugeScene(canvas: Canvas, reading: CockpitReading) {
+        val cx = 640f
+        val cy = 278f
+        canvas.save()
+        canvas.clipCircle(cx, cy, 148f)
+        canvas.drawBitmap(dialLandscape, null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
+
+        val viewId = DashboardSettings.resolveVehicleView(
+            modeId = state.vehicleViewModeId,
+            gaugeTitle = reading.title,
+            pitchDegrees = state.pitchDegrees,
+            rollDegrees = state.rollDegrees,
+            rollViewId = state.rollViewId,
+        )
+        val resourceId = vehicleResourceId(state.vehicleId, viewId)
+        val cacheKey = "${state.vehicleId}:$viewId"
+        val artwork = vehicleArtworkCache.getOrPut(cacheKey) {
+            val bitmap = BitmapFactory.decodeResource(resources, resourceId)
+            VehicleArtwork(bitmap, findOpaqueBounds(bitmap))
+        }
+        val bounds = artwork.contentBounds
+        val maxWidth = if (viewId == "side") 262f else 200f
+        val maxHeight = if (viewId == "side") 148f else 202f
+        val scale = min(maxWidth / bounds.width().coerceAtLeast(1), maxHeight / bounds.height().coerceAtLeast(1))
+        val targetWidth = bounds.width() * scale
+        val targetHeight = bounds.height() * scale
+        val targetCy = if (viewId == "side") 294f else 286f
+        val target = RectF(
+            cx - targetWidth / 2f,
+            targetCy - targetHeight / 2f,
+            cx + targetWidth / 2f,
+            targetCy + targetHeight / 2f,
+        )
+        val tilt = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
+        if (reading.title.equals("pitch", ignoreCase = true) || reading.title.equals("roll", ignoreCase = true)) {
+            canvas.rotate(tilt * 0.55f, cx, targetCy)
+        }
+        canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
+        canvas.restore()
+    }
+
+    private fun findOpaqueBounds(bitmap: Bitmap): Rect {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        var left = bitmap.width
+        var top = bitmap.height
+        var right = -1
+        var bottom = -1
+        pixels.forEachIndexed { index, color ->
+            if (Color.alpha(color) > 24) {
+                val x = index % bitmap.width
+                val y = index / bitmap.width
+                if (x < left) left = x
+                if (x > right) right = x
+                if (y < top) top = y
+                if (y > bottom) bottom = y
+            }
+        }
+        return if (right >= left && bottom >= top) Rect(left, top, right + 1, bottom + 1) else Rect(0, 0, bitmap.width, bitmap.height)
+    }
+
+    private fun vehicleResourceId(vehicleId: String, viewId: String): Int = when (vehicleId) {
+        "dirt_bike" -> when (viewId) {
+            "front" -> R.drawable.vehicle_dirt_bike_front
+            "rear" -> R.drawable.vehicle_dirt_bike_rear
+            else -> R.drawable.vehicle_dirt_bike_side
+        }
+        "quad" -> when (viewId) {
+            "front" -> R.drawable.vehicle_quad_front
+            "rear" -> R.drawable.vehicle_quad_rear
+            else -> R.drawable.vehicle_quad_side
+        }
+        "snowmobile" -> when (viewId) {
+            "front" -> R.drawable.vehicle_snowmobile_front
+            "rear" -> R.drawable.vehicle_snowmobile_rear
+            else -> R.drawable.vehicle_snowmobile_side
+        }
+        "three_wheeler" -> when (viewId) {
+            "front" -> R.drawable.vehicle_three_wheeler_front
+            "rear" -> R.drawable.vehicle_three_wheeler_rear
+            else -> R.drawable.vehicle_three_wheeler_side
+        }
+        "truck" -> when (viewId) {
+            "front" -> R.drawable.vehicle_truck_front
+            "rear" -> R.drawable.vehicle_truck_rear
+            else -> R.drawable.vehicle_truck_side
+        }
+        "car" -> when (viewId) {
+            "front" -> R.drawable.vehicle_car_front
+            "rear" -> R.drawable.vehicle_car_rear
+            else -> R.drawable.vehicle_car_side
+        }
+        "boat" -> when (viewId) {
+            "front" -> R.drawable.vehicle_boat_front
+            "rear" -> R.drawable.vehicle_boat_rear
+            else -> R.drawable.vehicle_boat_side
+        }
+        "seadoo" -> when (viewId) {
+            "front" -> R.drawable.vehicle_seadoo_front
+            "rear" -> R.drawable.vehicle_seadoo_rear
+            else -> R.drawable.vehicle_seadoo_side
+        }
+        else -> when (viewId) {
+            "front" -> R.drawable.vehicle_sxs_front
+            "rear" -> R.drawable.vehicle_sxs_rear
+            else -> R.drawable.vehicle_sxs_side
+        }
     }
 
     private fun drawConfiguredSideButtons(canvas: Canvas) {

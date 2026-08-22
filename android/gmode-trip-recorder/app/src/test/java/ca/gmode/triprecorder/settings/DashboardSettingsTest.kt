@@ -45,4 +45,23 @@ class DashboardSettingsTest {
         assertEquals(180.0, config.pitchOffsetDegrees, 0.0)
         assertEquals(0.0, config.rollOffsetDegrees, 0.0)
     }
+
+    @Test
+    fun legacyVehicleIdsMigrateToGeneratedCategories() {
+        assertEquals("sxs", DashboardConfig(vehicleId = "atv_utv").normalized().vehicleId)
+        assertEquals("dirt_bike", DashboardConfig(vehicleId = "motorcycle").normalized().vehicleId)
+    }
+
+    @Test
+    fun automaticVehicleViewFollowsSensorAxisAndGaugeMeaning() {
+        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Pitch", 14.0, 2.0, "rear"))
+        assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Roll", 2.0, 14.0, "rear"))
+        assertEquals("front", DashboardSettings.resolveVehicleView("auto", "Speed", 2.0, 14.0, "front"))
+        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Speed", 14.0, 2.0, "rear"))
+    }
+
+    @Test
+    fun fixedVehicleViewOverridesSensors() {
+        assertEquals("front", DashboardSettings.resolveVehicleView("front", "Pitch", 30.0, 0.0, "rear"))
+    }
 }

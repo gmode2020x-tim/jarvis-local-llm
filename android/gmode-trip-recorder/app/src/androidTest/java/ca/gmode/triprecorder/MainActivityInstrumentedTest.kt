@@ -37,6 +37,30 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
+    fun everyVehicleCategoryHasThreeTransparentGaugeViews() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val resources = listOf(
+            R.drawable.vehicle_dirt_bike_side, R.drawable.vehicle_dirt_bike_front, R.drawable.vehicle_dirt_bike_rear,
+            R.drawable.vehicle_sxs_side, R.drawable.vehicle_sxs_front, R.drawable.vehicle_sxs_rear,
+            R.drawable.vehicle_quad_side, R.drawable.vehicle_quad_front, R.drawable.vehicle_quad_rear,
+            R.drawable.vehicle_snowmobile_side, R.drawable.vehicle_snowmobile_front, R.drawable.vehicle_snowmobile_rear,
+            R.drawable.vehicle_three_wheeler_side, R.drawable.vehicle_three_wheeler_front, R.drawable.vehicle_three_wheeler_rear,
+            R.drawable.vehicle_truck_side, R.drawable.vehicle_truck_front, R.drawable.vehicle_truck_rear,
+            R.drawable.vehicle_car_side, R.drawable.vehicle_car_front, R.drawable.vehicle_car_rear,
+            R.drawable.vehicle_boat_side, R.drawable.vehicle_boat_front, R.drawable.vehicle_boat_rear,
+            R.drawable.vehicle_seadoo_side, R.drawable.vehicle_seadoo_front, R.drawable.vehicle_seadoo_rear,
+        )
+
+        assertEquals(27, resources.size)
+        resources.forEach { resourceId ->
+            val bitmap = BitmapFactory.decodeResource(context.resources, resourceId)
+            assertEquals(512, bitmap.width)
+            assertEquals(512, bitmap.height)
+            assertTrue(bitmap.hasAlpha())
+        }
+    }
+
+    @Test
     fun launchesFullScreenLandscapeCockpit() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

@@ -203,6 +203,8 @@ class MainActivity : AppCompatActivity() {
                     automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                     readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
                     sideButtons = sideButtonConfig,
+                    vehicleViewModeId = dashboardConfig.vehicleViewModeId,
+                    rollViewId = dashboardConfig.rollViewId,
                 ),
             )
             onAction = ::handleCockpitAction
@@ -553,6 +555,16 @@ class MainActivity : AppCompatActivity() {
             backgroundTintList = ColorStateList.valueOf(ORANGE)
             setSelection(DashboardSettings.VEHICLES.indexOfFirst { it.id == dashboardConfig.vehicleId }.coerceAtLeast(0))
         }
+        val vehicleViewSpinner = Spinner(this).apply {
+            adapter = labelAdapter(DashboardSettings.VIEW_MODES.map { it.label })
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            setSelection(DashboardSettings.VIEW_MODES.indexOfFirst { it.id == dashboardConfig.vehicleViewModeId }.coerceAtLeast(0))
+        }
+        val rollViewSpinner = Spinner(this).apply {
+            adapter = labelAdapter(DashboardSettings.ROLL_VIEWS.map { it.label })
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            setSelection(DashboardSettings.ROLL_VIEWS.indexOfFirst { it.id == dashboardConfig.rollViewId }.coerceAtLeast(0))
+        }
         val gaugeOrder = (
             dashboardConfig.gaugeIds + DashboardSettings.GAUGES.map { it.id }.filterNot { it in dashboardConfig.gaugeIds }
             ).toMutableList()
@@ -569,7 +581,11 @@ class MainActivity : AppCompatActivity() {
             card(
                 "COCKPIT LAYOUT",
                 labeledInput("VEHICLE PROFILE", vehicleSpinner),
-                text("Choose exactly two gauges. The first enabled gauge is the large left instrument; the second is the large right instrument. The remaining gauges below are the swap-in catalog.", 11f, MUTED),
+                horizontalViews(
+                    labeledInput("VEHICLE VIEW", vehicleViewSpinner),
+                    labeledInput("ROLL PERSPECTIVE", rollViewSpinner),
+                ),
+                text("Automatic view uses the S24 orientation sensors: pitch is shown from the side and roll from the selected front/rear perspective. Choose a fixed view to override it. Select exactly two gauges and switch between them with the cockpit arrows.", 11f, MUTED),
                 gaugeRows,
                 horizontalButtons(saveCockpit, vehicleDefaults),
                 zeroLevel,
@@ -639,6 +655,8 @@ class MainActivity : AppCompatActivity() {
                     selected,
                     dashboardConfig.pitchOffsetDegrees,
                     dashboardConfig.rollOffsetDegrees,
+                    DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
+                    DashboardSettings.ROLL_VIEWS[rollViewSpinner.selectedItemPosition].id,
                 ),
             )
             Toast.makeText(this, "${vehicle.label} cockpit applied", Toast.LENGTH_SHORT).show()
@@ -662,7 +680,14 @@ class MainActivity : AppCompatActivity() {
             val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
             val selected = gaugeOrder.filter { it in selectedGaugeIds }.take(DashboardSettings.MAX_GAUGES)
             dashboardSettings.save(
-                DashboardConfig(vehicle.id, selected, telemetry.pitchDegrees, telemetry.rollDegrees),
+                DashboardConfig(
+                    vehicleId = vehicle.id,
+                    gaugeIds = selected,
+                    pitchOffsetDegrees = telemetry.pitchDegrees,
+                    rollOffsetDegrees = telemetry.rollDegrees,
+                    vehicleViewModeId = DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
+                    rollViewId = DashboardSettings.ROLL_VIEWS[rollViewSpinner.selectedItemPosition].id,
+                ),
             )
             Toast.makeText(this, "Pitch and roll zeroed for this phone mount", Toast.LENGTH_SHORT).show()
             recreate()
@@ -921,6 +946,10 @@ class MainActivity : AppCompatActivity() {
                             },
                             readings = dashboardConfig.gaugeIds.map { readingFor(it, active, telemetry, duration) },
                             sideButtons = sideButtonConfig,
+                            vehicleViewModeId = dashboardConfig.vehicleViewModeId,
+                            rollViewId = dashboardConfig.rollViewId,
+                            pitchDegrees = telemetry.pitchDegrees,
+                            rollDegrees = telemetry.rollDegrees,
                         ),
                     )
                 }
