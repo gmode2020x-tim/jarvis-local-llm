@@ -8,11 +8,11 @@ class DashboardSettingsTest {
     @Test
     fun normalizedPreservesValidGaugeOrderAndRemovesDuplicates() {
         val config = DashboardConfig(
-            vehicleId = "boat",
+            waterVehicleId = "boat",
             gaugeIds = listOf("compass", "speed", "compass", "unknown", "battery"),
         ).normalized()
 
-        assertEquals("boat", config.vehicleId)
+        assertEquals("boat", config.waterVehicleId)
         assertEquals(listOf("compass", "speed"), config.gaugeIds)
     }
 
@@ -50,6 +50,44 @@ class DashboardSettingsTest {
     fun legacyVehicleIdsMigrateToGeneratedCategories() {
         assertEquals("sxs", DashboardConfig(vehicleId = "atv_utv").normalized().vehicleId)
         assertEquals("dirt_bike", DashboardConfig(vehicleId = "motorcycle").normalized().vehicleId)
+    }
+
+    @Test
+    fun everyTripCategoryOffersAtLeastFourVehiclesAndOneFunnyChoiceExists() {
+        DashboardSettings.TRIP_TYPES.forEach { tripType ->
+            assertTrue("$tripType needs at least four vehicles", DashboardSettings.vehiclesForTripType(tripType).size >= 4)
+        }
+        assertTrue(DashboardSettings.VEHICLES.any { it.funny })
+    }
+
+    @Test
+    fun categorySelectionsNormalizeAndSwitchByTripType() {
+        val config = DashboardConfig(
+            vehicleId = "quad",
+            streetVehicleId = "clown_car",
+            snowVehicleId = "tracked_utv",
+            waterVehicleId = "hovercraft",
+        ).normalized()
+
+        assertEquals("quad", config.vehicleIdForTripType("off road"))
+        assertEquals("clown_car", config.vehicleIdForTripType("street"))
+        assertEquals("tracked_utv", config.vehicleIdForTripType("snow"))
+        assertEquals("hovercraft", config.vehicleIdForTripType("water"))
+    }
+
+    @Test
+    fun vehicleCannotBeSavedIntoTheWrongCategory() {
+        val config = DashboardConfig(
+            vehicleId = "boat",
+            streetVehicleId = "snowcat",
+            snowVehicleId = "car",
+            waterVehicleId = "quad",
+        ).normalized()
+
+        assertEquals(DashboardSettings.DEFAULT_VEHICLE_ID, config.vehicleId)
+        assertEquals(DashboardSettings.DEFAULT_STREET_VEHICLE_ID, config.streetVehicleId)
+        assertEquals(DashboardSettings.DEFAULT_SNOW_VEHICLE_ID, config.snowVehicleId)
+        assertEquals(DashboardSettings.DEFAULT_WATER_VEHICLE_ID, config.waterVehicleId)
     }
 
     @Test

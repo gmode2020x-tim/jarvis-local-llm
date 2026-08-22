@@ -227,7 +227,7 @@ class MainActivity : AppCompatActivity() {
         sideButtonConfig = sideButtonSettings.read()
         palette = appearanceSettings.palette()
         dashboardConfig = dashboardSettings.read()
-        quickTripType = DashboardSettings.defaultTripType(dashboardConfig.vehicleId)
+        quickTripType = "off_road"
         applySystemBarPalette()
         enterImmersiveMode()
         showCockpitScreen()
@@ -260,13 +260,14 @@ class MainActivity : AppCompatActivity() {
         showingSettings = false
         palette = appearanceSettings.palette()
         dashboardConfig = dashboardSettings.read()
+        val vehicle = dashboardVehicle(quickTripType)
         applySystemBarPalette()
         landscapeCockpit = LandscapeCockpitView(this).apply {
             setPalette(palette)
             setState(
                 CockpitState(
-                    vehicleId = dashboardConfig.vehicleId,
-                    vehicleLabel = DashboardSettings.VEHICLES.first { it.id == dashboardConfig.vehicleId }.label,
+                    vehicleId = vehicle.id,
+                    vehicleLabel = vehicle.label,
                     tripTypeLabel = tripTypeLabel(quickTripType),
                     automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                     readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
@@ -426,6 +427,10 @@ class MainActivity : AppCompatActivity() {
         TRIP_TYPE_VALUES.indexOf(value).coerceAtLeast(0)
     ].uppercase()
 
+    private fun dashboardVehicle(tripType: String) = DashboardSettings.vehicle(
+        dashboardConfig.vehicleIdForTripType(tripType),
+    )
+
     private fun placeholderReading(gaugeId: String): CockpitReading {
         val label = DashboardSettings.GAUGES.firstOrNull { it.id == gaugeId }?.label ?: gaugeId
         return CockpitReading(label, "--", "waiting")
@@ -488,7 +493,7 @@ class MainActivity : AppCompatActivity() {
         homeAssistantChip = statusChip("HA CHECKING")
         content.addView(horizontalViews(gpsChip, queueChip, homeAssistantChip).withBottom(dp(10)))
 
-        val vehicleLabel = DashboardSettings.VEHICLES.first { it.id == dashboardConfig.vehicleId }.label
+        val vehicleLabel = dashboardVehicle(quickTripType).label
         content.addView(
             horizontalViews(
                 text("$vehicleLabel COCKPIT", 12f, Color.WHITE, bold = true),
@@ -745,11 +750,19 @@ class MainActivity : AppCompatActivity() {
             showCockpitScreen()
         }
 
-        val vehicleSpinner = Spinner(this).apply {
-            adapter = labelAdapter(DashboardSettings.VEHICLES.map { it.label })
+        fun categoryVehicleSpinner(vehicles: List<ca.gmode.triprecorder.settings.VehicleProfile>, selectedId: String) = Spinner(this).apply {
+            adapter = labelAdapter(vehicles.map { it.label })
             backgroundTintList = ColorStateList.valueOf(ORANGE)
-            setSelection(DashboardSettings.VEHICLES.indexOfFirst { it.id == dashboardConfig.vehicleId }.coerceAtLeast(0))
+            setSelection(vehicles.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
         }
+        val streetVehicles = DashboardSettings.vehiclesForTripType("street")
+        val offRoadVehicles = DashboardSettings.vehiclesForTripType("off_road")
+        val snowVehicles = DashboardSettings.vehiclesForTripType("snow")
+        val waterVehicles = DashboardSettings.vehiclesForTripType("water")
+        val streetVehicleSpinner = categoryVehicleSpinner(streetVehicles, dashboardConfig.streetVehicleId)
+        val offRoadVehicleSpinner = categoryVehicleSpinner(offRoadVehicles, dashboardConfig.vehicleId)
+        val snowVehicleSpinner = categoryVehicleSpinner(snowVehicles, dashboardConfig.snowVehicleId)
+        val waterVehicleSpinner = categoryVehicleSpinner(waterVehicles, dashboardConfig.waterVehicleId)
         val vehicleViewSpinner = Spinner(this).apply {
             adapter = labelAdapter(DashboardSettings.VIEW_MODES.map { it.label })
             backgroundTintList = ColorStateList.valueOf(ORANGE)
@@ -775,7 +788,11 @@ class MainActivity : AppCompatActivity() {
         content.addView(
             card(
                 "COCKPIT LAYOUT",
-                labeledInput("VEHICLE PROFILE", vehicleSpinner),
+                text("Choose the vehicle displayed for each trip type. Changing the trip type automatically switches both the scene and vehicle.", 11f, MUTED),
+                labeledInput("STREET VEHICLE", streetVehicleSpinner),
+                labeledInput("OFF ROAD VEHICLE", offRoadVehicleSpinner),
+                labeledInput("SNOW VEHICLE", snowVehicleSpinner),
+                labeledInput("WATER VEHICLE", waterVehicleSpinner),
                 labeledInput("VEHICLE VIEW", vehicleViewSpinner),
                 text("Mount the S24 in landscape with the back of the phone facing forward. Automatic view shows the vehicle side for pitch and rear for roll. Choose a fixed view to override it. Select exactly two gauges and switch between them with the cockpit arrows.", 11f, MUTED),
                 gaugeRows,
@@ -846,21 +863,32 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Choose exactly two main gauges", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-            val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
+            val streetVehicle = streetVehicles[streetVehicleSpinner.selectedItemPosition]
+            val offRoadVehicle = offRoadVehicles[offRoadVehicleSpinner.selectedItemPosition]
+            val snowVehicle = snowVehicles[snowVehicleSpinner.selectedItemPosition]
+            val waterVehicle = waterVehicles[waterVehicleSpinner.selectedItemPosition]
             dashboardSettings.save(
                 DashboardConfig(
-                    vehicleId = vehicle.id,
+                    vehicleId = offRoadVehicle.id,
+                    streetVehicleId = streetVehicle.id,
+                    snowVehicleId = snowVehicle.id,
+                    waterVehicleId = waterVehicle.id,
                     gaugeIds = selected,
                     pitchOffsetDegrees = dashboardConfig.pitchOffsetDegrees,
                     rollOffsetDegrees = dashboardConfig.rollOffsetDegrees,
                     vehicleViewModeId = DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
                 ),
             )
-            Toast.makeText(this, "${vehicle.label} cockpit applied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Trip-type vehicle choices applied", Toast.LENGTH_SHORT).show()
             recreate()
         }
         vehicleDefaults.setOnClickListener {
-            val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
+            val vehicle = when (DashboardSettings.normalizeTripType(quickTripType)) {
+                "street" -> streetVehicles[streetVehicleSpinner.selectedItemPosition]
+                "snow" -> snowVehicles[snowVehicleSpinner.selectedItemPosition]
+                "water" -> waterVehicles[waterVehicleSpinner.selectedItemPosition]
+                else -> offRoadVehicles[offRoadVehicleSpinner.selectedItemPosition]
+            }
             val defaults = DashboardSettings.defaultGauges(vehicle.id)
             selectedGaugeIds.clear()
             selectedGaugeIds.addAll(defaults)
@@ -1194,13 +1222,14 @@ class MainActivity : AppCompatActivity() {
                 val currentTime = LocalTime.now().format(TIME_FORMAT)
                 if (::dashboardClock.isInitialized) dashboardClock.text = currentTime
                 if (::landscapeCockpit.isInitialized && !showingSettings) {
-                    val vehicle = DashboardSettings.VEHICLES.first { it.id == dashboardConfig.vehicleId }
+                    val currentTripType = active?.tripType ?: quickTripType
+                    val vehicle = dashboardVehicle(currentTripType)
                     landscapeCockpit.setState(
                         CockpitState(
                             time = currentTime,
                             vehicleId = vehicle.id,
                             vehicleLabel = vehicle.label,
-                            tripTypeLabel = tripTypeLabel(active?.tripType ?: quickTripType),
+                            tripTypeLabel = tripTypeLabel(currentTripType),
                             recording = active != null,
                             automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                             gpsLabel = gpsLabel,

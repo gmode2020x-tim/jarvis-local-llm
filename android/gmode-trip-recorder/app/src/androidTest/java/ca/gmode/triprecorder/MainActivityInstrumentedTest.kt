@@ -39,19 +39,13 @@ class MainActivityInstrumentedTest {
     @Test
     fun everyVehicleCategoryHasThreeTransparentGaugeViews() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val resources = listOf(
-            R.drawable.vehicle_dirt_bike_side, R.drawable.vehicle_dirt_bike_front, R.drawable.vehicle_dirt_bike_rear,
-            R.drawable.vehicle_sxs_side, R.drawable.vehicle_sxs_front, R.drawable.vehicle_sxs_rear,
-            R.drawable.vehicle_quad_side, R.drawable.vehicle_quad_front, R.drawable.vehicle_quad_rear,
-            R.drawable.vehicle_snowmobile_side, R.drawable.vehicle_snowmobile_front, R.drawable.vehicle_snowmobile_rear,
-            R.drawable.vehicle_three_wheeler_side, R.drawable.vehicle_three_wheeler_front, R.drawable.vehicle_three_wheeler_rear,
-            R.drawable.vehicle_truck_side, R.drawable.vehicle_truck_front, R.drawable.vehicle_truck_rear,
-            R.drawable.vehicle_car_side, R.drawable.vehicle_car_front, R.drawable.vehicle_car_rear,
-            R.drawable.vehicle_boat_side, R.drawable.vehicle_boat_front, R.drawable.vehicle_boat_rear,
-            R.drawable.vehicle_seadoo_side, R.drawable.vehicle_seadoo_front, R.drawable.vehicle_seadoo_rear,
-        )
+        val cockpit = LandscapeCockpitView(context)
+        val resources = DashboardSettings.VEHICLES.flatMap { vehicle ->
+            listOf("side", "front", "rear").map { view -> cockpit.vehicleResourceId(vehicle.id, view) }
+        }
 
-        assertEquals(27, resources.size)
+        assertEquals(DashboardSettings.VEHICLES.size * 3, resources.size)
+        assertEquals(resources.size, resources.toSet().size)
         resources.forEach { resourceId ->
             val bitmap = BitmapFactory.decodeResource(context.resources, resourceId)
             assertEquals(512, bitmap.width)
@@ -93,8 +87,15 @@ class MainActivityInstrumentedTest {
             "three_wheeler" to "off_road",
             "truck" to "off_road",
             "car" to "street",
+            "street_motorcycle" to "street",
+            "clown_car" to "street",
+            "snow_bike" to "snow",
+            "snowcat" to "snow",
+            "tracked_utv" to "snow",
             "boat" to "water",
             "seadoo" to "water",
+            "hovercraft" to "water",
+            "kayak" to "water",
         )
 
         DashboardSettings.VEHICLES.forEach { vehicle ->
@@ -137,6 +138,10 @@ class MainActivityInstrumentedTest {
                 assertTrue(labels.any { it == "USE CURRENT WI-FI" })
                 assertTrue(labels.any { it == "CHOOSE WI-FI IN ANDROID" })
                 assertTrue(labels.any { it.contains("Hybrid mode uses both signals") })
+                assertTrue(labels.any { it == "STREET VEHICLE" })
+                assertTrue(labels.any { it == "OFF ROAD VEHICLE" })
+                assertTrue(labels.any { it == "SNOW VEHICLE" })
+                assertTrue(labels.any { it == "WATER VEHICLE" })
                 assertTrue(labels.none { it.contains("ROLL PERSPECTIVE") })
             }
         }
@@ -155,6 +160,42 @@ class MainActivityInstrumentedTest {
                     val cockpit = root.getChildAt(0) as LandscapeCockpitView
                     assertEquals(listOf("Speed", "Compass"), cockpit.activeGaugeTitles())
                 }
+            }
+        } finally {
+            settings.save(original)
+        }
+    }
+
+    @Test
+    fun tripTypeCyclesSceneAndUserSelectedVehicleTogether() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val settings = DashboardSettings(context)
+        val original = settings.read()
+        settings.save(
+            DashboardConfig(
+                vehicleId = "quad",
+                streetVehicleId = "clown_car",
+                snowVehicleId = "tracked_utv",
+                waterVehicleId = "hovercraft",
+            ),
+        )
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                fun assertVehicleAndCycle(expectedVehicleId: String, expectedBackground: Int) {
+                    scenario.onActivity { activity ->
+                        val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
+                        val cockpit = root.getChildAt(0) as LandscapeCockpitView
+                        assertEquals(expectedVehicleId, cockpit.activeVehicleId())
+                        assertEquals(expectedBackground, cockpit.activeBackgroundResourceId())
+                        cockpit.onAction?.invoke(CockpitAction.TRIP_TYPE)
+                    }
+                    android.os.SystemClock.sleep(1_200)
+                }
+
+                assertVehicleAndCycle("quad", R.drawable.dial_offroad_landscape)
+                assertVehicleAndCycle("tracked_utv", R.drawable.dial_snow_landscape)
+                assertVehicleAndCycle("hovercraft", R.drawable.dial_water_landscape)
+                assertVehicleAndCycle("clown_car", R.drawable.dial_street_landscape)
             }
         } finally {
             settings.save(original)

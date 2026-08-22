@@ -144,6 +144,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel)
 
+    internal fun activeVehicleId(): String = state.vehicleId
+
     internal fun cornerIndicatorSnapshot(): CornerIndicatorSnapshot = CornerIndicatorSnapshot(
         wifiConnected = state.wifiConnected,
         networkConnected = state.networkConnected,
@@ -294,7 +296,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         return if (right >= left && bottom >= top) Rect(left, top, right + 1, bottom + 1) else Rect(0, 0, bitmap.width, bitmap.height)
     }
 
-    private fun vehicleResourceId(vehicleId: String, viewId: String): Int = when (vehicleId) {
+    internal fun vehicleResourceId(vehicleId: String, viewId: String): Int = when (vehicleId) {
         "dirt_bike" -> when (viewId) {
             "front" -> R.drawable.vehicle_dirt_bike_front
             "rear" -> R.drawable.vehicle_dirt_bike_rear
@@ -325,6 +327,31 @@ class LandscapeCockpitView(context: Context) : View(context) {
             "rear" -> R.drawable.vehicle_car_rear
             else -> R.drawable.vehicle_car_side
         }
+        "street_motorcycle" -> when (viewId) {
+            "front" -> R.drawable.vehicle_street_motorcycle_front
+            "rear" -> R.drawable.vehicle_street_motorcycle_rear
+            else -> R.drawable.vehicle_street_motorcycle_side
+        }
+        "clown_car" -> when (viewId) {
+            "front" -> R.drawable.vehicle_clown_car_front
+            "rear" -> R.drawable.vehicle_clown_car_rear
+            else -> R.drawable.vehicle_clown_car_side
+        }
+        "snow_bike" -> when (viewId) {
+            "front" -> R.drawable.vehicle_snow_bike_front
+            "rear" -> R.drawable.vehicle_snow_bike_rear
+            else -> R.drawable.vehicle_snow_bike_side
+        }
+        "snowcat" -> when (viewId) {
+            "front" -> R.drawable.vehicle_snowcat_front
+            "rear" -> R.drawable.vehicle_snowcat_rear
+            else -> R.drawable.vehicle_snowcat_side
+        }
+        "tracked_utv" -> when (viewId) {
+            "front" -> R.drawable.vehicle_tracked_utv_front
+            "rear" -> R.drawable.vehicle_tracked_utv_rear
+            else -> R.drawable.vehicle_tracked_utv_side
+        }
         "boat" -> when (viewId) {
             "front" -> R.drawable.vehicle_boat_front
             "rear" -> R.drawable.vehicle_boat_rear
@@ -334,6 +361,16 @@ class LandscapeCockpitView(context: Context) : View(context) {
             "front" -> R.drawable.vehicle_seadoo_front
             "rear" -> R.drawable.vehicle_seadoo_rear
             else -> R.drawable.vehicle_seadoo_side
+        }
+        "hovercraft" -> when (viewId) {
+            "front" -> R.drawable.vehicle_hovercraft_front
+            "rear" -> R.drawable.vehicle_hovercraft_rear
+            else -> R.drawable.vehicle_hovercraft_side
+        }
+        "kayak" -> when (viewId) {
+            "front" -> R.drawable.vehicle_kayak_front
+            "rear" -> R.drawable.vehicle_kayak_rear
+            else -> R.drawable.vehicle_kayak_side
         }
         else -> when (viewId) {
             "front" -> R.drawable.vehicle_sxs_front
