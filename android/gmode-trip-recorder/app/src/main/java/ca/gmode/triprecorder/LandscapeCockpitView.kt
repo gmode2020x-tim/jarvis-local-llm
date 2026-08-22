@@ -66,6 +66,9 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private var contentScale = 1f
     private var contentOffsetX = 0f
     private var contentOffsetY = 0f
+    private var selectedGaugeIndex = 0
+    private val previousGaugeZone = RectF()
+    private val nextGaugeZone = RectF()
     var onAction: ((CockpitAction) -> Unit)? = null
 
     init {
@@ -82,6 +85,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     fun setState(value: CockpitState) {
         state = value
+        if (value.readings.isNotEmpty()) selectedGaugeIndex %= value.readings.size else selectedGaugeIndex = 0
         contentDescription = "${value.vehicleLabel} cockpit, ${value.tripLabel}, ${value.gpsLabel}, ${value.homeAssistantLabel}"
         invalidate()
     }
@@ -110,24 +114,12 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.style = Paint.Style.FILL
         canvas.drawRect(0f, 0f, w, h, paint)
         drawDashboardTexture(canvas, w, h)
-        drawFrame(canvas, w, h)
         drawHeader(canvas, w, h)
         drawSideControls(canvas, w, h)
-
-        val heroReadings = state.readings.take(2).let { values ->
-            when (values.size) {
-                0 -> listOf(
-                    CockpitReading("PITCH", "--", "degrees"),
-                    CockpitReading("ROLL", "--", "degrees"),
-                )
-                1 -> values + CockpitReading("ROLL", "--", "degrees")
-                else -> values
-            }
-        }
-        val heroY = h * 0.515f
-        val heroRadius = min(w * 0.150f, h * 0.470f)
-        drawHeroGauge(canvas, w * 0.356f, heroY, heroRadius, heroReadings[0], sideView = true)
-        drawHeroGauge(canvas, w * 0.644f, heroY, heroRadius, heroReadings[1], sideView = false)
+        val reading = state.readings.getOrNull(selectedGaugeIndex) ?: CockpitReading("PITCH", "--", "degrees")
+        drawFooter(canvas, w, h, reading)
+        val heroRadius = min(w * 0.166f, h * 0.360f)
+        drawHeroGauge(canvas, w * 0.500f, h * 0.470f, heroRadius, reading, sideView = selectedGaugeIndex % 2 == 0)
         canvas.restore()
     }
 
@@ -152,35 +144,257 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun drawHeader(canvas: Canvas, w: Float, h: Float) {
-        drawText(canvas, state.time, w * 0.037f, h * 0.123f, h * 0.075f, Color.WHITE, Paint.Align.LEFT, true)
-        drawText(canvas, "●  ${state.gpsLabel}", w * 0.110f, h * 0.115f, h * 0.035f, palette.accent, Paint.Align.LEFT, true)
-        drawText(canvas, state.pendingLabel, w * 0.50f, h * 0.115f, h * 0.034f, palette.muted, Paint.Align.CENTER, true)
-        drawText(canvas, state.homeAssistantLabel, w * 0.870f, h * 0.115f, h * 0.034f, palette.accent, Paint.Align.RIGHT, true)
-        drawText(canvas, state.vehicleLabel.uppercase(), w * 0.970f, h * 0.123f, h * 0.038f, Color.WHITE, Paint.Align.RIGHT, true)
+        paint.style = Paint.Style.FILL
+        paint.shader = LinearGradient(0f, 0f, 0f, 100f, Color.parseColor("#202020"), Color.parseColor("#050505"), Shader.TileMode.CLAMP)
+        val leftWing = Path().apply {
+            moveTo(70f, 94f)
+            lineTo(145f, 0f)
+            lineTo(438f, 0f)
+            lineTo(355f, 94f)
+            close()
+        }
+        val rightWing = Path().apply {
+            moveTo(925f, 94f)
+            lineTo(842f, 0f)
+            lineTo(1136f, 0f)
+            lineTo(1210f, 94f)
+            close()
+        }
+        val centreHood = Path().apply {
+            moveTo(350f, 94f)
+            cubicTo(405f, 12f, 485f, -14f, 640f, -14f)
+            cubicTo(795f, -14f, 875f, 12f, 930f, 94f)
+            close()
+        }
+        canvas.drawPath(leftWing, paint)
+        canvas.drawPath(rightWing, paint)
+        canvas.drawPath(centreHood, paint)
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        paint.color = Color.parseColor("#4A4A4A")
+        canvas.drawPath(leftWing, paint)
+        canvas.drawPath(rightWing, paint)
+        canvas.drawPath(centreHood, paint)
+        canvas.drawLine(58f, 96f, 1222f, 96f, paint)
+        paint.style = Paint.Style.FILL
+
+        drawText(canvas, state.time, 640f, 56f, 44f, Color.WHITE, Paint.Align.CENTER, true)
+        drawText(canvas, "−", 462f, 70f, 43f, Color.parseColor("#777777"), Paint.Align.CENTER, true)
+        drawText(canvas, "+", 818f, 70f, 43f, Color.parseColor("#777777"), Paint.Align.CENTER, true)
+        drawWifiStatus(canvas, 162f, 54f, 23f)
+        drawSatelliteStatus(canvas, 238f, 54f, 22f)
+        drawBluetoothStatus(canvas, 313f, 54f, 23f)
+        drawGlobeStatus(canvas, 954f, 54f, 23f)
+        drawThermometerStatus(canvas, 1028f, 54f, 23f)
+        val pendingCount = state.pendingLabel.substringBefore(' ').toIntOrNull() ?: 0
+        drawText(
+            canvas,
+            if (pendingCount == 0) "− − −" else pendingCount.toString(),
+            1101f,
+            60f,
+            17f,
+            palette.accent,
+            Paint.Align.CENTER,
+            true,
+        )
+    }
+
+    private fun drawWifiStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = 3f
+        paint.color = palette.accent
+        for (radius in floatArrayOf(size, size * 0.68f, size * 0.36f)) {
+            canvas.drawArc(RectF(cx - radius, cy - radius * 0.70f, cx + radius, cy + radius * 1.30f), 220f, 100f, false, paint)
+        }
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, cy + size * 0.65f, 2.7f, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+    }
+
+    private fun drawSatelliteStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        paint.color = palette.accent
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.strokeCap = Paint.Cap.ROUND
+        canvas.drawLine(cx, cy - size, cx, cy + size * 0.70f, paint)
+        canvas.drawLine(cx - size * 0.52f, cy - size * 0.22f, cx + size * 0.52f, cy + size * 0.22f, paint)
+        canvas.drawLine(cx - size * 0.66f, cy + size * 0.44f, cx + size * 0.66f, cy - size * 0.44f, paint)
+        canvas.drawArc(RectF(cx - size, cy - size * 0.10f, cx - size * 0.12f, cy + size * 0.96f), 245f, 80f, false, paint)
+        canvas.drawArc(RectF(cx + size * 0.12f, cy - size * 0.96f, cx + size, cy + size * 0.10f), 65f, 80f, false, paint)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, cy, 3.2f, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+    }
+
+    private fun drawBluetoothStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        paint.color = palette.accent
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.strokeCap = Paint.Cap.ROUND
+        val path = Path().apply {
+            moveTo(cx, cy - size)
+            lineTo(cx + size * 0.55f, cy - size * 0.42f)
+            lineTo(cx - size * 0.42f, cy + size * 0.46f)
+            lineTo(cx + size * 0.55f, cy + size)
+            lineTo(cx, cy + size)
+            close()
+            moveTo(cx, cy - size)
+            lineTo(cx, cy + size)
+            moveTo(cx - size * 0.55f, cy - size * 0.55f)
+            lineTo(cx + size * 0.55f, cy + size * 0.46f)
+        }
+        canvas.drawPath(path, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+    }
+
+    private fun drawGlobeStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        paint.color = palette.accent
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.5f
+        canvas.drawCircle(cx, cy, size, paint)
+        canvas.drawOval(RectF(cx - size * 0.45f, cy - size, cx + size * 0.45f, cy + size), paint)
+        canvas.drawLine(cx - size, cy, cx + size, cy, paint)
+        canvas.drawArc(RectF(cx - size, cy - size * 0.62f, cx + size, cy + size * 0.62f), 205f, 130f, false, paint)
+        canvas.drawArc(RectF(cx - size, cy - size * 0.62f, cx + size, cy + size * 0.62f), 25f, 130f, false, paint)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx + size * 0.72f, cy - size * 0.78f, 4.5f, paint)
+    }
+
+    private fun drawThermometerStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        paint.color = palette.accent
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.strokeCap = Paint.Cap.ROUND
+        canvas.drawLine(cx, cy - size, cx, cy + size * 0.46f, paint)
+        canvas.drawRoundRect(RectF(cx - 5f, cy - size, cx + 5f, cy + size * 0.54f), 5f, 5f, paint)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, cy + size * 0.58f, 8f, paint)
+        canvas.drawRect(cx - 2f, cy - size * 0.20f, cx + 2f, cy + size * 0.58f, paint)
+        paint.strokeCap = Paint.Cap.BUTT
     }
 
     private fun drawSideControls(canvas: Canvas, w: Float, h: Float) {
         val labelsLeft = listOf(
             CockpitAction.START to if (state.recording) "RECORDING" else "START",
-            CockpitAction.STOP to "STOP",
+            CockpitAction.TRIP_TYPE to state.tripTypeLabel,
             CockpitAction.AUTO to if (state.automaticArmed) "AUTO ARMED" else "AUTO",
-            CockpitAction.SETTINGS to "SETTINGS",
         )
         val labelsRight = listOf(
+            CockpitAction.STOP to "STOP",
             CockpitAction.SYNC to "SYNC",
-            CockpitAction.TRIP_TYPE to state.tripTypeLabel,
-            CockpitAction.THEME to "THEME",
             CockpitAction.HOME_ASSISTANT to "HA LINK",
         )
-        val top = h * 0.181f
-        val height = h * 0.190f
-        val gap = h * 0.017f
+        val rowTops = floatArrayOf(98f, 216f, 338f)
+        val rowBottoms = floatArrayOf(212f, 336f, 464f)
         labelsLeft.forEachIndexed { index, pair ->
-            drawControl(canvas, RectF(w * 0.009f, top + index * (height + gap), w * 0.174f, top + index * (height + gap) + height), pair.first, pair.second)
+            drawReferenceControl(canvas, rowTops[index], rowBottoms[index], pair.first, pair.second, leftSide = true)
         }
         labelsRight.forEachIndexed { index, pair ->
-            drawControl(canvas, RectF(w * 0.827f, top + index * (height + gap), w * 0.991f, top + index * (height + gap) + height), pair.first, pair.second)
+            drawReferenceControl(canvas, rowTops[index], rowBottoms[index], pair.first, pair.second, leftSide = false)
         }
+    }
+
+    private fun drawReferenceControl(canvas: Canvas, top: Float, bottom: Float, action: CockpitAction, label: String, leftSide: Boolean) {
+        val labelRect = if (leftSide) RectF(36f, top, 307f, bottom) else RectF(972f, top, 1244f, bottom)
+        val iconRect = if (leftSide) RectF(307f, top, 428f, bottom) else RectF(852f, top, 972f, bottom)
+        val overall = RectF(min(labelRect.left, iconRect.left), top, maxOf(labelRect.right, iconRect.right), bottom)
+        touchZones[action] = overall
+        drawReferencePanel(canvas, labelRect)
+        drawReferencePanel(canvas, iconRect)
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = 6f
+        paint.color = palette.accent
+        val underlineY = bottom - 7f
+        if (leftSide) canvas.drawLine(88f, underlineY, 270f, underlineY, paint)
+        else canvas.drawLine(1008f, underlineY, 1191f, underlineY, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+
+        val labelSize = if (label.length > 10) 20f else 24f
+        drawText(canvas, label.uppercase(), labelRect.centerX(), labelRect.centerY() + 9f, labelSize, Color.WHITE, Paint.Align.CENTER, true)
+        drawControlIcon(canvas, action, iconRect.centerX(), iconRect.centerY(), 31f)
+    }
+
+    private fun drawReferencePanel(canvas: Canvas, rect: RectF) {
+        paint.style = Paint.Style.FILL
+        paint.shader = LinearGradient(rect.left, rect.top, rect.right, rect.bottom, Color.parseColor("#242424"), Color.parseColor("#070707"), Shader.TileMode.CLAMP)
+        canvas.drawRoundRect(rect, 8f, 8f, paint)
+        paint.shader = BitmapShader(dashboardLeather, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        paint.alpha = 52
+        canvas.drawRoundRect(rect, 8f, 8f, paint)
+        paint.alpha = 255
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        paint.color = Color.parseColor("#353535")
+        canvas.drawRoundRect(rect, 8f, 8f, paint)
+    }
+
+    private fun drawFooter(canvas: Canvas, w: Float, h: Float, reading: CockpitReading) {
+        val footer = Path().apply {
+            moveTo(69f, 467f)
+            lineTo(1211f, 467f)
+            lineTo(1130f, 592f)
+            lineTo(151f, 592f)
+            close()
+        }
+        paint.style = Paint.Style.FILL
+        paint.shader = LinearGradient(0f, 467f, 0f, 592f, Color.parseColor("#1C1C1C"), Color.parseColor("#050505"), Shader.TileMode.CLAMP)
+        canvas.drawPath(footer, paint)
+        paint.shader = BitmapShader(dashboardLeather, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        paint.alpha = 42
+        canvas.drawPath(footer, paint)
+        paint.alpha = 255
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        paint.color = Color.parseColor("#4A4A4A")
+        canvas.drawPath(footer, paint)
+
+        previousGaugeZone.set(420f, 480f, 520f, 574f)
+        nextGaugeZone.set(760f, 480f, 860f, 574f)
+        drawChevron(canvas, 467f, 522f, pointsRight = false)
+        drawChevron(canvas, 814f, 522f, pointsRight = true)
+
+        val activeNumber = if (state.readings.isEmpty()) 1 else selectedGaugeIndex + 1
+        val total = maxOf(state.readings.size, 1)
+        drawText(canvas, reading.title.uppercase(), 640f, 531f, 24f, Color.WHITE, Paint.Align.CENTER, true)
+        drawText(canvas, "$activeNumber / $total  •  ${state.tripLabel}", 640f, 562f, 15f, palette.accent, Paint.Align.CENTER, false)
+
+        drawText(canvas, state.gpsLabel, 157f, 523f, 16f, palette.accent, Paint.Align.CENTER, true)
+        drawText(canvas, state.tripTypeLabel, 258f, 523f, 20f, palette.accent, Paint.Align.CENTER, true)
+        drawText(canvas, state.pendingLabel, 950f, 555f, 13f, palette.accent, Paint.Align.CENTER, true)
+
+        val themeZone = RectF(995f, 484f, 1074f, 574f)
+        val settingsZone = RectF(1075f, 484f, 1154f, 574f)
+        touchZones[CockpitAction.THEME] = themeZone
+        touchZones[CockpitAction.SETTINGS] = settingsZone
+        drawControlIcon(canvas, CockpitAction.THEME, themeZone.centerX(), 522f, 24f)
+        drawControlIcon(canvas, CockpitAction.SETTINGS, settingsZone.centerX(), 522f, 24f)
+
+        paint.style = Paint.Style.FILL
+        paint.color = palette.accent
+        canvas.drawRoundRect(RectF(935f, 501f, 952f, 535f), 3f, 3f, paint)
+        canvas.drawRect(940f, 495f, 947f, 502f, paint)
+    }
+
+    private fun drawChevron(canvas: Canvas, cx: Float, cy: Float, pointsRight: Boolean) {
+        val direction = if (pointsRight) 1f else -1f
+        val path = Path().apply {
+            moveTo(cx - direction * 12f, cy - 18f)
+            lineTo(cx + direction * 7f, cy)
+            lineTo(cx - direction * 12f, cy + 18f)
+        }
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 8f
+        paint.strokeJoin = Paint.Join.MITER
+        paint.strokeCap = Paint.Cap.SQUARE
+        paint.color = Color.parseColor("#777777")
+        canvas.drawPath(path, paint)
+        paint.strokeCap = Paint.Cap.BUTT
     }
 
     private fun drawControl(canvas: Canvas, rect: RectF, action: CockpitAction, label: String) {
@@ -535,6 +749,18 @@ class LandscapeCockpitView(context: Context) : View(context) {
         if (event.action == MotionEvent.ACTION_UP) {
             val designX = (event.x - contentOffsetX) / contentScale
             val designY = (event.y - contentOffsetY) / contentScale
+            if (state.readings.isNotEmpty() && previousGaugeZone.contains(designX, designY)) {
+                selectedGaugeIndex = (selectedGaugeIndex - 1 + state.readings.size) % state.readings.size
+                invalidate()
+                performClick()
+                return true
+            }
+            if (state.readings.isNotEmpty() && nextGaugeZone.contains(designX, designY)) {
+                selectedGaugeIndex = (selectedGaugeIndex + 1) % state.readings.size
+                invalidate()
+                performClick()
+                return true
+            }
             touchZones.entries.firstOrNull { it.value.contains(designX, designY) }?.let {
                 onAction?.invoke(it.key)
                 performClick()
@@ -551,6 +777,6 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     companion object {
         private const val DESIGN_WIDTH = 1280f
-        private const val DESIGN_HEIGHT = 408f
+        private const val DESIGN_HEIGHT = 592f
     }
 }

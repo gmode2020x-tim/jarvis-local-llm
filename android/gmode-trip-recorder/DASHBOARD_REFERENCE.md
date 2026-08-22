@@ -1,0 +1,61 @@
+# Dashboard reference specification
+
+The supplied dashboard image is the authoritative visual layout for the Android cockpit.
+
+## Source geometry
+
+- Native reference canvas: `1280 × 592` pixels (`2.1622:1`).
+- Rendering rule: draw on the native 1280 × 592 coordinate grid, then scale uniformly with `FIT_CENTER`.
+- Never independently stretch the X and Y axes. Remaining pixels on a mismatched display use the same black leather texture as the dashboard.
+- Touch coordinates are transformed back into the 1280 × 592 grid before hit testing.
+
+## Measured regions
+
+| Region | Reference coordinates |
+| --- | --- |
+| Top canopy | `x 70–1209`, `y 0–98` |
+| Central gauge | centre approximately `(640, 278)`, outer radius approximately `212` |
+| Left label column | `x 36–307`, rows beginning near `y 96`, `214`, and `337` |
+| Left icon column | `x 307–428` |
+| Right icon column | `x 852–972` |
+| Right label column | `x 972–1244` |
+| Footer | `x 69–1210`, `y 466–592` |
+| Footer centre controls | arrows near `x 464` and `x 816`; title centred at `x 640` |
+
+## Visual hierarchy
+
+1. Near-black outer canvas.
+2. Fine black automotive-leather grain.
+3. Thin graphite frame and stitched/seamed panel dividers.
+4. Curved top canopy with red status symbols and centred white time.
+5. Three raised control rows per side. Each row has a wide label panel and a narrow icon panel next to the gauge.
+6. One circular gauge above all adjoining panels.
+7. Curved footer with trip status, gauge navigation arrows, and utility controls.
+
+## Gauge construction
+
+- One active gauge at a time; configured gauges are selected with the footer arrows.
+- Layered black/graphite bezel with narrow silver highlights.
+- White major/minor ticks with restrained red accent ticks.
+- Photographic blue-sky mountain and rocky-ground interior.
+- Vehicle artwork centred over the terrain.
+- White gauge title and scale labels; large red live value.
+- Zero/calibration scale at the bottom of pitch and roll gauges.
+
+## Functional mapping
+
+The reference layout is retained while labels reflect the trip recorder rather than pretending to provide unrelated radio or phone features.
+
+- Left rows: Start/recording, trip type, automatic recording.
+- Right rows: Stop, synchronize, Home Assistant.
+- Footer centre arrows: previous/next configured gauge.
+- Footer utilities: theme and settings.
+- Header/footer status: GPS, pending upload count, Home Assistant, vehicle, and trip status.
+
+## Responsive acceptance criteria
+
+- The gauge remains circular on every device.
+- The relative coordinates above do not reflow or reorder.
+- All controls remain inside the fitted reference canvas.
+- Letterboxing is symmetrical and visually continuous with the leather dashboard.
+- Tap targets follow the rendered controls after scaling and centring.

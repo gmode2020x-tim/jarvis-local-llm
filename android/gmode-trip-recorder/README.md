@@ -4,9 +4,9 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 
 ## Current capabilities
 
-- Full-screen landscape automotive cockpit drawn on the reference image's exact 1280×408 active-dashboard grid: two dominant swappable instruments with realistic UTV artwork and photographic mountain terrain, black leather surfaces, layered dark-metal dial bezels, four raised icon-led controls on each side, and glanceable GPS/queue/Home Assistant indicators. The grid is uniformly letterboxed on taller phones so its geometry and circular gauges are not distorted.
+- Full-screen landscape automotive cockpit drawn on the authoritative reference image's exact 1280×592 grid: one central active instrument with realistic UTV artwork and photographic mountain terrain, a curved status canopy, three split icon/label controls per side, and a curved utility footer. Configured gauges are changed with the footer arrows. The grid scales uniformly and is symmetrically letterboxed when necessary, so every phone preserves the same geometry and circular gauge.
 - User-selectable Reference Red, GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color. Reference Red is the first-install default.
-- Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Choose exactly two active gauges: the first occupies the large left instrument and the second occupies the large right instrument.
+- Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Choose exactly two active gauges and use the dashboard footer arrows to switch the central instrument between them.
 - One-touch pitch/roll zeroing compensates for the phone mount angle.
 - Real S24 telemetry gauges for speed, pitch, roll, G-force, altitude/elevation gain, compass, battery, GNSS satellites/accuracy, coordinates, barometer, distance, and trip time. Unavailable readings remain visibly blank instead of being simulated.
 
