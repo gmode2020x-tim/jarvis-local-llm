@@ -9,8 +9,8 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 - All three left and three right dashboard buttons are user-configurable. Each has editable text, a choice of dashboard icons or the target app's real icon, and can open any launchable app installed on the phone or run a built-in GMODE recording, trip-type, synchronization, or settings action.
 - User-selectable Reference Red, GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color. Reference Red is the first-install default.
 - Dirt bike, SxS/side-by-side, Quad ATV, Snowmobile, Three-wheeler, Truck/4x4, Car, Boat, and Sea-Doo profiles with vehicle-specific defaults and dedicated side, front, and rear artwork. Choose exactly two active gauges and use the dashboard footer arrows to switch the central instrument between them.
-- Automatic vehicle perspective uses the phone's rotation-vector sensors: pitch or pitch-dominant motion shows the side view, while roll or roll-dominant motion shows the configured front/rear perspective. The user can instead lock the gauge to Side, Front, or Rear at any time.
-- One-touch pitch/roll zeroing compensates for the phone mount angle.
+- Automatic vehicle perspective assumes the S24 is mounted in landscape with the back of the phone facing forward: pitch or pitch-dominant motion shows the side view, while roll or roll-dominant motion shows the rear view. The user can instead lock the gauge to Side, Front, or Rear at any time.
+- Stationary pitch/roll level calibration works without starting a trip. It waits for the phone mount to settle, samples the S24 orientation sensors for two seconds, rejects the attempt if acceleration or rotation is detected, and saves the level-ground offsets.
 - Real S24 telemetry gauges for speed, pitch, roll, G-force, altitude/elevation gain, compass, battery, GNSS satellites/accuracy, coordinates, barometer, distance, and trip time. Unavailable readings remain visibly blank instead of being simulated.
 
 - Explicit Start Trip / Stop Trip workflow with Street, Off road, Snow, and Water classifications.
@@ -52,7 +52,7 @@ On first use:
 7. When Android opens the app settings, choose **Permissions > Location > Allow all the time**. Return to the app and press **Save auto settings** again. The status must say **Armed** before relying on automatic departure recording.
 8. Under **Appearance**, select a dashboard theme. Optionally enter a custom six-digit color such as `#D946EF`, then press **Save + Apply Theme**.
 9. Under **Left + right dashboard buttons**, edit each button's text, choose an icon, and select either a GMODE action or an installed app under **Opens**. Press **Save + Apply Side Buttons**.
-10. Under **Cockpit layout**, choose a vehicle and enable exactly two gauges from the catalog. Select **Automatic — phone sensors** for a side view during pitch and a front/rear view during roll, choose the preferred roll perspective for the phone's mounting direction, or lock a fixed view. Use the footer arrows to switch the single central instrument between the two gauges.
+10. Under **Cockpit layout**, choose a vehicle and enable exactly two gauges from the catalog. Select **Automatic — phone sensors** for side during pitch and rear during roll, or lock a fixed view. Mount the phone in landscape with its back facing forward. To set level, park on flat ground, stop completely, leave the phone in its normal mount, and press **Calibrate Pitch + Roll Zero**.
 
 Geofence delivery is optimized for battery life, so an exit or return can be reported a short time after crossing the boundary. A 250 m home radius and 5 minute return delay are the defaults and are a practical starting point for driving.
 

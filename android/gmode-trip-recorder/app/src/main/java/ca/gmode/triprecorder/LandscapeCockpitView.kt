@@ -60,7 +60,6 @@ data class CockpitState(
     val readings: List<CockpitReading> = emptyList(),
     val sideButtons: List<SideButtonConfig> = SideButtonSettings.DEFAULTS.values.toList(),
     val vehicleViewModeId: String = DashboardSettings.DEFAULT_VIEW_MODE_ID,
-    val rollViewId: String = DashboardSettings.DEFAULT_ROLL_VIEW_ID,
     val pitchDegrees: Double? = null,
     val rollDegrees: Double? = null,
 )
@@ -229,7 +228,6 @@ class LandscapeCockpitView(context: Context) : View(context) {
             gaugeTitle = reading.title,
             pitchDegrees = state.pitchDegrees,
             rollDegrees = state.rollDegrees,
-            rollViewId = state.rollViewId,
         )
         val resourceId = vehicleResourceId(state.vehicleId, viewId)
         val cacheKey = "${state.vehicleId}:$viewId"

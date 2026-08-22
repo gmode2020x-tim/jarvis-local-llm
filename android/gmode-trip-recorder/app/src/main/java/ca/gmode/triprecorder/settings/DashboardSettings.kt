@@ -14,7 +14,6 @@ data class DashboardConfig(
     val pitchOffsetDegrees: Double = 0.0,
     val rollOffsetDegrees: Double = 0.0,
     val vehicleViewModeId: String = DashboardSettings.DEFAULT_VIEW_MODE_ID,
-    val rollViewId: String = DashboardSettings.DEFAULT_ROLL_VIEW_ID,
 ) {
     fun normalized(): DashboardConfig {
         val migratedVehicleId = DashboardSettings.VEHICLE_ID_ALIASES[vehicleId] ?: vehicleId
@@ -29,8 +28,6 @@ data class DashboardConfig(
             rollOffsetDegrees = rollOffsetDegrees.takeIf { it.isFinite() }?.coerceIn(-180.0, 180.0) ?: 0.0,
             vehicleViewModeId = vehicleViewModeId.takeIf { id -> DashboardSettings.VIEW_MODES.any { it.id == id } }
                 ?: DashboardSettings.DEFAULT_VIEW_MODE_ID,
-            rollViewId = rollViewId.takeIf { id -> id in DashboardSettings.FIXED_VIEW_IDS && id != "side" }
-                ?: DashboardSettings.DEFAULT_ROLL_VIEW_ID,
         )
     }
 }
@@ -45,7 +42,6 @@ class DashboardSettings(context: Context) {
         pitchOffsetDegrees = preferences.getString(KEY_PITCH_OFFSET, null)?.toDoubleOrNull() ?: 0.0,
         rollOffsetDegrees = preferences.getString(KEY_ROLL_OFFSET, null)?.toDoubleOrNull() ?: 0.0,
         vehicleViewModeId = preferences.getString(KEY_VEHICLE_VIEW_MODE, DEFAULT_VIEW_MODE_ID) ?: DEFAULT_VIEW_MODE_ID,
-        rollViewId = preferences.getString(KEY_ROLL_VIEW, DEFAULT_ROLL_VIEW_ID) ?: DEFAULT_ROLL_VIEW_ID,
     ).normalized()
 
     fun save(config: DashboardConfig) {
@@ -56,14 +52,14 @@ class DashboardSettings(context: Context) {
             .putString(KEY_PITCH_OFFSET, normalized.pitchOffsetDegrees.toString())
             .putString(KEY_ROLL_OFFSET, normalized.rollOffsetDegrees.toString())
             .putString(KEY_VEHICLE_VIEW_MODE, normalized.vehicleViewModeId)
-            .putString(KEY_ROLL_VIEW, normalized.rollViewId)
+            .remove(LEGACY_KEY_ROLL_VIEW)
             .apply()
     }
 
     companion object {
         const val DEFAULT_VEHICLE_ID = "sxs"
         const val DEFAULT_VIEW_MODE_ID = "auto"
-        const val DEFAULT_ROLL_VIEW_ID = "rear"
+        const val AUTOMATIC_ROLL_VIEW_ID = "rear"
         const val MAX_GAUGES = 2
 
         val VEHICLE_ID_ALIASES = mapOf(
@@ -88,11 +84,6 @@ class DashboardSettings(context: Context) {
             VehicleViewOption("side", "Always side"),
             VehicleViewOption("front", "Always front"),
             VehicleViewOption("rear", "Always rear"),
-        )
-
-        val ROLL_VIEWS = listOf(
-            VehicleViewOption("rear", "Rear — looking forward"),
-            VehicleViewOption("front", "Front — looking backward"),
         )
 
         val FIXED_VIEW_IDS = setOf("side", "front", "rear")
@@ -127,14 +118,13 @@ class DashboardSettings(context: Context) {
             gaugeTitle: String,
             pitchDegrees: Double?,
             rollDegrees: Double?,
-            rollViewId: String,
         ): String {
             if (modeId in FIXED_VIEW_IDS) return modeId
             if (gaugeTitle.equals("pitch", ignoreCase = true)) return "side"
-            if (gaugeTitle.equals("roll", ignoreCase = true)) return rollViewId
+            if (gaugeTitle.equals("roll", ignoreCase = true)) return AUTOMATIC_ROLL_VIEW_ID
             val pitch = kotlin.math.abs(pitchDegrees ?: 0.0)
             val roll = kotlin.math.abs(rollDegrees ?: 0.0)
-            return if (roll > pitch + 2.0) rollViewId else "side"
+            return if (roll > pitch + 2.0) AUTOMATIC_ROLL_VIEW_ID else "side"
         }
 
         private const val PREFS = "dashboard_settings"
@@ -143,6 +133,6 @@ class DashboardSettings(context: Context) {
         private const val KEY_PITCH_OFFSET = "pitch_offset_degrees"
         private const val KEY_ROLL_OFFSET = "roll_offset_degrees"
         private const val KEY_VEHICLE_VIEW_MODE = "vehicle_view_mode"
-        private const val KEY_ROLL_VIEW = "roll_vehicle_view"
+        private const val LEGACY_KEY_ROLL_VIEW = "roll_vehicle_view"
     }
 }

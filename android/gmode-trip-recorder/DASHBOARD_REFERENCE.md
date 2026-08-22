@@ -47,7 +47,8 @@ The supplied dashboard image is the authoritative visual layout and artwork sour
 - White major/minor ticks with restrained red accent ticks.
 - Photographic blue-sky mountain and rocky-ground interior.
 - Selected vehicle artwork centred over the terrain. Each of the nine vehicle profiles includes independent side, front, and rear transparent artwork.
-- Automatic perspective shows the side artwork for pitch or pitch-dominant motion and the user-selected front/rear artwork for roll or roll-dominant motion. Side, front, and rear can also be locked explicitly.
+- With the phone mounted in landscape and its back facing forward, Automatic perspective shows side artwork for pitch or pitch-dominant motion and rear artwork for roll or roll-dominant motion. Side, front, and rear can also be locked explicitly.
+- Level calibration samples the mounted phone while the vehicle is stopped on flat ground and refuses to replace the saved pitch/roll zero if the accelerometer or gyroscope reports movement.
 - White gauge title and scale labels; large red live value.
 - Zero/calibration scale at the bottom of pitch and roll gauges.
 

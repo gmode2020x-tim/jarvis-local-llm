@@ -5,6 +5,9 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.display.DisplayManager
+import android.view.Display
+import android.view.Surface
 import ca.gmode.triprecorder.data.SensorSnapshot
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -16,6 +19,7 @@ data class OrientationSnapshot(
 
 class SensorCollector(context: Context) : SensorEventListener {
     private val sensorManager = context.getSystemService(SensorManager::class.java)
+    private val displayManager = context.getSystemService(DisplayManager::class.java)
     private val pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
     private val linearAccelerationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
     private val accelerationSensor = linearAccelerationSensor ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -90,16 +94,32 @@ class SensorCollector(context: Context) : SensorEventListener {
 
             Sensor.TYPE_ROTATION_VECTOR -> {
                 val rotation = FloatArray(9)
-                val orientation = FloatArray(3)
                 SensorManager.getRotationMatrixFromVector(rotation, event.values)
-                SensorManager.getOrientation(rotation, orientation)
-                pitchDegrees = Math.toDegrees(orientation[1].toDouble())
-                rollDegrees = Math.toDegrees(orientation[2].toDouble())
+                val screenRotation = remapToScreen(rotation)
+                val orientation = VehicleOrientationMath.fromWorldUp(
+                    upX = screenRotation[6].toDouble(),
+                    upY = screenRotation[7].toDouble(),
+                    upZ = screenRotation[8].toDouble(),
+                )
+                pitchDegrees = orientation.pitchDegrees
+                rollDegrees = orientation.rollDegrees
             }
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    private fun remapToScreen(rotationMatrix: FloatArray): FloatArray {
+        val displayRotation = displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: Surface.ROTATION_90
+        val (axisX, axisY) = when (displayRotation) {
+            Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
+            Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
+            Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
+            else -> SensorManager.AXIS_X to SensorManager.AXIS_Y
+        }
+        val remapped = FloatArray(9)
+        return if (SensorManager.remapCoordinateSystem(rotationMatrix, axisX, axisY, remapped)) remapped else rotationMatrix
+    }
 
     private fun vectorMagnitude(values: FloatArray): Double = sqrt(
         values.take(3).sumOf { value -> value.toDouble() * value.toDouble() },

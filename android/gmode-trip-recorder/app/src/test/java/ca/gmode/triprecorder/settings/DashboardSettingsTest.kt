@@ -53,15 +53,15 @@ class DashboardSettingsTest {
     }
 
     @Test
-    fun automaticVehicleViewFollowsSensorAxisAndGaugeMeaning() {
-        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Pitch", 14.0, 2.0, "rear"))
-        assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Roll", 2.0, 14.0, "rear"))
-        assertEquals("front", DashboardSettings.resolveVehicleView("auto", "Speed", 2.0, 14.0, "front"))
-        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Speed", 14.0, 2.0, "rear"))
+    fun automaticVehicleViewUsesPhoneBackFacingForwardConvention() {
+        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Pitch", 14.0, 2.0))
+        assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Roll", 2.0, 14.0))
+        assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Speed", 2.0, 14.0))
+        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Speed", 14.0, 2.0))
     }
 
     @Test
     fun fixedVehicleViewOverridesSensors() {
-        assertEquals("front", DashboardSettings.resolveVehicleView("front", "Pitch", 30.0, 0.0, "rear"))
+        assertEquals("front", DashboardSettings.resolveVehicleView("front", "Pitch", 30.0, 0.0))
     }
 }

@@ -73,6 +73,22 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
+    fun cockpitSettingsExposeForwardMountConventionAndStationaryZeroCalibration() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val content = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
+                val cockpit = content.getChildAt(0) as LandscapeCockpitView
+                cockpit.onAction?.invoke(CockpitAction.SETTINGS)
+
+                val labels = collectText(content)
+                assertTrue(labels.any { it.contains("back of the phone facing forward", ignoreCase = true) })
+                assertTrue(labels.any { it == "CALIBRATE PITCH + ROLL ZERO" })
+                assertTrue(labels.none { it.contains("ROLL PERSPECTIVE") })
+            }
+        }
+    }
+
+    @Test
     fun configuredGaugeOrderBecomesLeftAndRightMainInstruments() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val settings = DashboardSettings(context)
@@ -157,6 +173,13 @@ class MainActivityInstrumentedTest {
             }
         } finally {
             settings.save(original)
+        }
+    }
+
+    private fun collectText(view: android.view.View): List<String> = buildList {
+        if (view is android.widget.TextView) add(view.text.toString())
+        if (view is android.view.ViewGroup) {
+            repeat(view.childCount) { index -> addAll(collectText(view.getChildAt(index))) }
         }
     }
 }

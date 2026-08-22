@@ -58,6 +58,8 @@ import ca.gmode.triprecorder.sync.SyncStatusStore
 import ca.gmode.triprecorder.tracking.TrackingService
 import ca.gmode.triprecorder.tracking.LiveTelemetry
 import ca.gmode.triprecorder.tracking.LiveTelemetryStore
+import ca.gmode.triprecorder.tracking.LevelCalibration
+import ca.gmode.triprecorder.tracking.SensorCollector
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -95,6 +97,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appearanceSettings: AppearanceSettings
     private lateinit var dashboardSettings: DashboardSettings
     private lateinit var liveTelemetryStore: LiveTelemetryStore
+    private lateinit var calibrationSensors: SensorCollector
     private lateinit var sideButtonSettings: SideButtonSettings
     private lateinit var palette: DashboardPalette
     private lateinit var dashboardConfig: DashboardConfig
@@ -134,6 +137,7 @@ class MainActivity : AppCompatActivity() {
     private var startAfterPermission = false
     private var captureHomeAfterPermission = false
     private var saveAutoAfterPermission = false
+    private var levelCalibrationInProgress = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -161,6 +165,7 @@ class MainActivity : AppCompatActivity() {
         appearanceSettings = AppearanceSettings(this)
         dashboardSettings = DashboardSettings(this)
         liveTelemetryStore = LiveTelemetryStore(this)
+        calibrationSensors = SensorCollector(this)
         sideButtonSettings = SideButtonSettings(this)
         sideButtonConfig = sideButtonSettings.read()
         palette = appearanceSettings.palette()
@@ -204,7 +209,6 @@ class MainActivity : AppCompatActivity() {
                     readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
                     sideButtons = sideButtonConfig,
                     vehicleViewModeId = dashboardConfig.vehicleViewModeId,
-                    rollViewId = dashboardConfig.rollViewId,
                 ),
             )
             onAction = ::handleCockpitAction
@@ -326,6 +330,16 @@ class MainActivity : AppCompatActivity() {
             refreshAutoUi()
             if (autoSettings.read().enabled) autoManager.refreshRegistration { _, _ -> refreshAutoUi() }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        calibrationSensors.start()
+    }
+
+    override fun onStop() {
+        calibrationSensors.stop()
+        super.onStop()
     }
 
     private fun createContent(showCockpitPreview: Boolean = true): ScrollView {
@@ -560,11 +574,6 @@ class MainActivity : AppCompatActivity() {
             backgroundTintList = ColorStateList.valueOf(ORANGE)
             setSelection(DashboardSettings.VIEW_MODES.indexOfFirst { it.id == dashboardConfig.vehicleViewModeId }.coerceAtLeast(0))
         }
-        val rollViewSpinner = Spinner(this).apply {
-            adapter = labelAdapter(DashboardSettings.ROLL_VIEWS.map { it.label })
-            backgroundTintList = ColorStateList.valueOf(ORANGE)
-            setSelection(DashboardSettings.ROLL_VIEWS.indexOfFirst { it.id == dashboardConfig.rollViewId }.coerceAtLeast(0))
-        }
         val gaugeOrder = (
             dashboardConfig.gaugeIds + DashboardSettings.GAUGES.map { it.id }.filterNot { it in dashboardConfig.gaugeIds }
             ).toMutableList()
@@ -576,19 +585,23 @@ class MainActivity : AppCompatActivity() {
         renderRows()
         val saveCockpit = dashboardButton("SAVE + APPLY COCKPIT", filled = true)
         val vehicleDefaults = dashboardButton("USE VEHICLE DEFAULTS", filled = false)
-        val zeroLevel = dashboardButton("ZERO PITCH + ROLL", filled = false)
+        val zeroLevel = dashboardButton("CALIBRATE PITCH + ROLL ZERO", filled = false)
+        val calibrationStatus = text(
+            "Saved zero: pitch ${formatCalibration(dashboardConfig.pitchOffsetDegrees)}, roll ${formatCalibration(dashboardConfig.rollOffsetDegrees)}",
+            11f,
+            MUTED,
+        )
         content.addView(
             card(
                 "COCKPIT LAYOUT",
                 labeledInput("VEHICLE PROFILE", vehicleSpinner),
-                horizontalViews(
-                    labeledInput("VEHICLE VIEW", vehicleViewSpinner),
-                    labeledInput("ROLL PERSPECTIVE", rollViewSpinner),
-                ),
-                text("Automatic view uses the S24 orientation sensors: pitch is shown from the side and roll from the selected front/rear perspective. Choose a fixed view to override it. Select exactly two gauges and switch between them with the cockpit arrows.", 11f, MUTED),
+                labeledInput("VEHICLE VIEW", vehicleViewSpinner),
+                text("Mount the S24 in landscape with the back of the phone facing forward. Automatic view shows the vehicle side for pitch and rear for roll. Choose a fixed view to override it. Select exactly two gauges and switch between them with the cockpit arrows.", 11f, MUTED),
                 gaugeRows,
                 horizontalButtons(saveCockpit, vehicleDefaults),
+                text("LEVEL CALIBRATION: Park on flat ground, stop completely, leave the phone in its normal mount, then press the button and release the phone. Calibration is rejected if the S24 detects movement.", 11f, MUTED),
                 zeroLevel,
+                calibrationStatus,
             ),
         )
 
@@ -651,12 +664,11 @@ class MainActivity : AppCompatActivity() {
             val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
             dashboardSettings.save(
                 DashboardConfig(
-                    vehicle.id,
-                    selected,
-                    dashboardConfig.pitchOffsetDegrees,
-                    dashboardConfig.rollOffsetDegrees,
-                    DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
-                    DashboardSettings.ROLL_VIEWS[rollViewSpinner.selectedItemPosition].id,
+                    vehicleId = vehicle.id,
+                    gaugeIds = selected,
+                    pitchOffsetDegrees = dashboardConfig.pitchOffsetDegrees,
+                    rollOffsetDegrees = dashboardConfig.rollOffsetDegrees,
+                    vehicleViewModeId = DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
                 ),
             )
             Toast.makeText(this, "${vehicle.label} cockpit applied", Toast.LENGTH_SHORT).show()
@@ -672,25 +684,44 @@ class MainActivity : AppCompatActivity() {
             renderRows()
         }
         zeroLevel.setOnClickListener {
-            val telemetry = liveTelemetryStore.read()
-            if (telemetry.pitchDegrees == null || telemetry.rollDegrees == null) {
-                Toast.makeText(this, "Start a trip and wait for S24 orientation data before zeroing", Toast.LENGTH_LONG).show()
+            if (levelCalibrationInProgress) {
+                Toast.makeText(this, "Level calibration is already sampling", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
-            val selected = gaugeOrder.filter { it in selectedGaugeIds }.take(DashboardSettings.MAX_GAUGES)
-            dashboardSettings.save(
-                DashboardConfig(
-                    vehicleId = vehicle.id,
-                    gaugeIds = selected,
-                    pitchOffsetDegrees = telemetry.pitchDegrees,
-                    rollOffsetDegrees = telemetry.rollDegrees,
-                    vehicleViewModeId = DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
-                    rollViewId = DashboardSettings.ROLL_VIEWS[rollViewSpinner.selectedItemPosition].id,
-                ),
-            )
-            Toast.makeText(this, "Pitch and roll zeroed for this phone mount", Toast.LENGTH_SHORT).show()
-            recreate()
+            levelCalibrationInProgress = true
+            zeroLevel.isEnabled = false
+            calibrationStatus.text = "Release the phone — settling…"
+            calibrationSensors.snapshotAndReset()
+            Toast.makeText(this, "Keep the stopped vehicle and phone still", Toast.LENGTH_LONG).show()
+            lifecycleScope.launch {
+                delay(LevelCalibration.SETTLE_MS)
+                calibrationSensors.snapshotAndReset()
+                calibrationStatus.text = "Sampling level position…"
+                delay(LevelCalibration.SAMPLE_MS)
+                val orientation = calibrationSensors.orientation()
+                val motion = calibrationSensors.snapshotAndReset()
+                levelCalibrationInProgress = false
+                zeroLevel.isEnabled = true
+                if (orientation.pitchDegrees == null || orientation.rollDegrees == null) {
+                    calibrationStatus.text = "Orientation sensor unavailable — calibration not changed"
+                    Toast.makeText(this@MainActivity, "S24 orientation data is not available yet; try again", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val accelerationPeak = motion.accelerationPeakMs2 ?: 0.0
+                val gyroscopePeak = motion.gyroscopePeakRadS ?: 0.0
+                if (!LevelCalibration.isStationary(accelerationPeak, gyroscopePeak)) {
+                    calibrationStatus.text = "Movement detected — zero was not changed"
+                    Toast.makeText(this@MainActivity, "Movement detected. Stop completely and try calibration again.", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                dashboardConfig = dashboardConfig.copy(
+                    pitchOffsetDegrees = orientation.pitchDegrees,
+                    rollOffsetDegrees = orientation.rollDegrees,
+                ).normalized()
+                dashboardSettings.save(dashboardConfig)
+                calibrationStatus.text = "Saved zero: pitch ${formatCalibration(dashboardConfig.pitchOffsetDegrees)}, roll ${formatCalibration(dashboardConfig.rollOffsetDegrees)}"
+                Toast.makeText(this@MainActivity, "Pitch and roll zero saved for this phone mount", Toast.LENGTH_SHORT).show()
+            }
         }
         refreshAutoUi()
         return scroll
@@ -947,7 +978,6 @@ class MainActivity : AppCompatActivity() {
                             readings = dashboardConfig.gaugeIds.map { readingFor(it, active, telemetry, duration) },
                             sideButtons = sideButtonConfig,
                             vehicleViewModeId = dashboardConfig.vehicleViewModeId,
-                            rollViewId = dashboardConfig.rollViewId,
                             pitchDegrees = telemetry.pitchDegrees,
                             rollDegrees = telemetry.rollDegrees,
                         ),
@@ -1385,6 +1415,8 @@ class MainActivity : AppCompatActivity() {
         val totalMinutes = duration.toMinutes().coerceAtLeast(0)
         return "%d:%02d".format(totalMinutes / 60, totalMinutes % 60)
     }
+
+    private fun formatCalibration(value: Double): String = "%+.1f°".format(value)
 
     companion object {
         private val TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm")
