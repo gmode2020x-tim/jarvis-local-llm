@@ -2,13 +2,18 @@ package ca.gmode.triprecorder
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothManager
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -64,6 +69,15 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 import kotlin.math.abs
+
+private data class DashboardPhoneStatus(
+    val wifiConnected: Boolean,
+    val networkConnected: Boolean,
+    val bluetoothEnabled: Boolean?,
+    val batteryPercent: Int?,
+    val batteryCharging: Boolean,
+    val batteryTemperatureC: Double?,
+)
 
 class MainActivity : AppCompatActivity() {
     private lateinit var repository: RecordingRepository
@@ -222,6 +236,19 @@ class MainActivity : AppCompatActivity() {
                 applySystemBarPalette()
                 Toast.makeText(this, next.label, Toast.LENGTH_SHORT).show()
             }
+            CockpitAction.BLUETOOTH -> handleBluetoothIndicatorTap()
+        }
+    }
+
+    private fun handleBluetoothIndicatorTap() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT))
+        } else {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
     }
 
@@ -556,6 +583,7 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
             add(Manifest.permission.ACCESS_COARSE_LOCATION)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
         }
         permissionLauncher.launch(permissions.toTypedArray())
     }
@@ -694,6 +722,7 @@ class MainActivity : AppCompatActivity() {
                 val pending = repository.pendingPointCount()
                 val telemetry = liveTelemetryStore.read()
                 val duration = active?.let { Duration.between(Instant.parse(it.startAt), Instant.now()) } ?: Duration.ZERO
+                val phoneStatus = readDashboardPhoneStatus()
                 val gpsLabel: String
                 if (active == null) {
                     if (::recorderStatus.isInitialized) recorderStatus.text = "Ready to record"
@@ -754,6 +783,17 @@ class MainActivity : AppCompatActivity() {
                             gpsLabel = gpsLabel,
                             pendingLabel = "$pending PENDING",
                             homeAssistantLabel = homeAssistantLabel,
+                            wifiConnected = phoneStatus.wifiConnected,
+                            networkConnected = phoneStatus.networkConnected,
+                            bluetoothEnabled = phoneStatus.bluetoothEnabled,
+                            gpsReady = active?.lastAccuracyMeters != null,
+                            satelliteCount = telemetry.satelliteCount,
+                            pendingCount = pending,
+                            homeAssistantConnected = configured && !syncFailed,
+                            batteryPercent = phoneStatus.batteryPercent ?: telemetry.batteryPercent?.roundToInt(),
+                            batteryCharging = phoneStatus.batteryCharging,
+                            batteryTemperatureC = phoneStatus.batteryTemperatureC,
+                            tripDurationLabel = formatDuration(duration),
                             tripLabel = if (active == null) {
                                 "READY • LOCAL-FIRST RECORDING"
                             } else {
@@ -1123,6 +1163,48 @@ class MainActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = bottom
         }
+    }
+
+    private fun readDashboardPhoneStatus(): DashboardPhoneStatus {
+        val connectivity = getSystemService(ConnectivityManager::class.java)
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+        val networkConnected = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        val wifiConnected = networkConnected && capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+
+        val batteryManager = getSystemService(BatteryManager::class.java)
+        val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val broadcastPercent = if (level >= 0 && scale > 0) (level * 100 / scale).coerceIn(0, 100) else null
+        val rawBattery = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        val batteryPercent = broadcastPercent ?: rawBattery.takeIf { it in 0..100 }
+        val rawTemperature = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val temperatureC = rawTemperature
+            ?.takeIf { it != Int.MIN_VALUE && it in -500..1000 }
+            ?.div(10.0)
+
+        return DashboardPhoneStatus(
+            wifiConnected = wifiConnected,
+            networkConnected = networkConnected,
+            bluetoothEnabled = readBluetoothEnabled(),
+            batteryPercent = batteryPercent,
+            batteryCharging = when (batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
+                BatteryManager.BATTERY_STATUS_CHARGING, BatteryManager.BATTERY_STATUS_FULL -> true
+                BatteryManager.BATTERY_STATUS_DISCHARGING, BatteryManager.BATTERY_STATUS_NOT_CHARGING -> false
+                else -> batteryManager.isCharging
+            },
+            batteryTemperatureC = temperatureC,
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun readBluetoothEnabled(): Boolean? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) return null
+        return runCatching { getSystemService(BluetoothManager::class.java).adapter?.isEnabled }.getOrNull()
     }
 
     private fun hasFineLocation(): Boolean = ContextCompat.checkSelfPermission(

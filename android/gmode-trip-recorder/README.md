@@ -4,7 +4,8 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 
 ## Current capabilities
 
-- Full-screen landscape automotive cockpit rebuilt from lossless pieces cut directly from the authoritative 1280×592 reference image. Its original canopy, leather panels, icons, seams, gauge artwork, footer and proportions are preserved instead of approximated with canvas shapes. Live clock/gauge text is drawn over the source artwork. The grid scales uniformly and is symmetrically letterboxed when necessary, so every phone preserves the same geometry and circular gauge.
+- Full-screen landscape automotive cockpit rebuilt from lossless pieces cut directly from the authoritative 1280×592 reference image. Its original canopy, leather panels, main-control icons, seams, gauge artwork, footer and proportions are preserved instead of approximated with canvas shapes. Live clock, gauge text, and corner indicators are drawn over the source artwork. The grid scales uniformly and is symmetrically letterboxed when necessary, so every phone preserves the same geometry and circular gauge.
+- Live corner indicators report Wi-Fi/internet validation, GPS fix and satellite count, Bluetooth state, Home Assistant availability, queued uploads, phone battery temperature/charge/percentage, recording state, trip type, and elapsed trip time. Theme and settings icons remain functional controls.
 - User-selectable Reference Red, GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color. Reference Red is the first-install default.
 - Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Choose exactly two active gauges and use the dashboard footer arrows to switch the central instrument between them.
 - One-touch pitch/roll zeroing compensates for the phone mount angle.

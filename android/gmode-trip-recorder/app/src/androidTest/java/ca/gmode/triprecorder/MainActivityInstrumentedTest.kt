@@ -63,4 +63,42 @@ class MainActivityInstrumentedTest {
             settings.save(original)
         }
     }
+
+    @Test
+    fun cornerIndicatorsReflectLatestLiveState() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
+                val cockpit = root.getChildAt(0) as LandscapeCockpitView
+                cockpit.setState(
+                    CockpitState(
+                        wifiConnected = true,
+                        networkConnected = true,
+                        bluetoothEnabled = false,
+                        gpsReady = true,
+                        pendingCount = 7,
+                        batteryPercent = 84,
+                        batteryCharging = true,
+                        recording = true,
+                        tripDurationLabel = "1:23",
+                    ),
+                )
+
+                assertEquals(
+                    CornerIndicatorSnapshot(
+                        wifiConnected = true,
+                        networkConnected = true,
+                        bluetoothEnabled = false,
+                        gpsReady = true,
+                        pendingCount = 7,
+                        batteryPercent = 84,
+                        batteryCharging = true,
+                        recording = true,
+                        tripDurationLabel = "1:23",
+                    ),
+                    cockpit.cornerIndicatorSnapshot(),
+                )
+            }
+        }
+    }
 }

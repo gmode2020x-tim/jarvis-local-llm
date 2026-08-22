@@ -7,7 +7,7 @@ The supplied dashboard image is the authoritative visual layout and artwork sour
 - The app uses lossless PNG pieces cut directly from the supplied image rather than recreating its surfaces with approximate vector drawing.
 - The five pieces are the top canopy, left middle, centre middle, right middle, and footer.
 - Reassembling the pieces on the 1280 × 592 design grid is pixel-identical to the cleaned source master.
-- Only the clock, gauge name/value, and footer readout are cleared from the source artwork and redrawn from live application state.
+- The clock, gauge name/value, footer readout, and red corner indicators are cleared from the source artwork and redrawn from live application state.
 - The original visible controls use invisible touch regions mapped to trip-recorder actions; the artwork itself is not distorted or reflowed.
 
 ## Source geometry
@@ -62,6 +62,14 @@ The reference artwork and its visible labels are retained unchanged. Their touch
 - `APPS`: Home Assistant settings.
 - Footer centre arrows: previous/next configured gauge.
 - Footer utilities: theme and settings.
+
+## Live corner indicators
+
+- Top left: validated Wi-Fi, GPS/satellite fix, and Bluetooth state. Tapping Bluetooth requests Nearby Devices permission when required, then opens Bluetooth settings.
+- Top right: validated internet, Home Assistant state, battery temperature, and queued upload count.
+- Bottom left: GPS state, recording/standby state, trip-type code, and elapsed trip time.
+- Bottom right: battery percentage/charging state, theme control, and settings control.
+- Active indicators use the selected theme accent. Inactive indicators use a deliberately dimmed red; unavailable Bluetooth state shows `?` rather than pretending to be off.
 
 ## Responsive acceptance criteria
 

@@ -39,6 +39,10 @@ def create_dynamic_master(source: Path, output: Path) -> None:
         ((592, 111, 687, 139), True, False), # white gauge title
         ((585, 362, 697, 407), False, True), # red gauge value
         ((540, 497, 742, 575), True, True),  # white/red footer readout
+        ((130, 24, 335, 88), False, True),   # Wi-Fi, GPS and Bluetooth
+        ((925, 24, 1132, 88), False, True),  # network, temperature and queue
+        ((112, 480, 330, 568), False, True), # GPS/recording/type/timer
+        ((916, 480, 1145, 568), False, True),# battery, theme and settings
     )
     for (left, top, right, bottom), remove_white, remove_red in regions:
         roi = image[top:bottom, left:right]

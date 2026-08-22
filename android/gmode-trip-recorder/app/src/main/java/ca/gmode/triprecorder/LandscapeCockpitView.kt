@@ -39,7 +39,30 @@ data class CockpitState(
     val pendingLabel: String = "0 PENDING",
     val homeAssistantLabel: String = "HA SETUP",
     val tripLabel: String = "READY TO RECORD",
+    val wifiConnected: Boolean = false,
+    val networkConnected: Boolean = false,
+    val bluetoothEnabled: Boolean? = null,
+    val gpsReady: Boolean = false,
+    val satelliteCount: Int? = null,
+    val pendingCount: Int = 0,
+    val homeAssistantConnected: Boolean = false,
+    val batteryPercent: Int? = null,
+    val batteryCharging: Boolean = false,
+    val batteryTemperatureC: Double? = null,
+    val tripDurationLabel: String = "0:00",
     val readings: List<CockpitReading> = emptyList(),
+)
+
+data class CornerIndicatorSnapshot(
+    val wifiConnected: Boolean,
+    val networkConnected: Boolean,
+    val bluetoothEnabled: Boolean?,
+    val gpsReady: Boolean,
+    val pendingCount: Int,
+    val batteryPercent: Int?,
+    val batteryCharging: Boolean,
+    val recording: Boolean,
+    val tripDurationLabel: String,
 )
 
 enum class CockpitAction {
@@ -51,6 +74,7 @@ enum class CockpitAction {
     TRIP_TYPE,
     THEME,
     HOME_ASSISTANT,
+    BLUETOOTH,
 }
 
 class LandscapeCockpitView(context: Context) : View(context) {
@@ -97,6 +121,18 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     internal fun activeGaugeTitles(): List<String> = state.readings.map { it.title }
 
+    internal fun cornerIndicatorSnapshot(): CornerIndicatorSnapshot = CornerIndicatorSnapshot(
+        wifiConnected = state.wifiConnected,
+        networkConnected = state.networkConnected,
+        bluetoothEnabled = state.bluetoothEnabled,
+        gpsReady = state.gpsReady,
+        pendingCount = state.pendingCount,
+        batteryPercent = state.batteryPercent,
+        batteryCharging = state.batteryCharging,
+        recording = state.recording,
+        tripDurationLabel = state.tripDurationLabel,
+    )
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         touchZones.clear()
@@ -140,6 +176,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         touchZones[CockpitAction.HOME_ASSISTANT] = RectF(852f, 338f, 1244f, 464f)
         touchZones[CockpitAction.THEME] = RectF(996f, 468f, 1074f, 586f)
         touchZones[CockpitAction.SETTINGS] = RectF(1074f, 468f, 1164f, 586f)
+        touchZones[CockpitAction.BLUETOOTH] = RectF(282f, 16f, 343f, 92f)
         previousGaugeZone.set(410f, 468f, 530f, 590f)
         nextGaugeZone.set(750f, 468f, 870f, 590f)
     }
@@ -151,6 +188,128 @@ class LandscapeCockpitView(context: Context) : View(context) {
         drawReferenceText(canvas, reading.title, 640f, 536f, 24f, Color.WHITE, true)
         val detail = if (reading.subtitle.isNotBlank()) reading.subtitle else state.tripLabel
         drawReferenceText(canvas, detail, 640f, 565f, 18f, palette.accent, true)
+        drawLiveCornerIndicators(canvas)
+    }
+
+    private fun drawLiveCornerIndicators(canvas: Canvas) {
+        val active = palette.accent
+        val wifiColor = indicatorColor(state.wifiConnected)
+        val gpsColor = indicatorColor(state.gpsReady)
+        val bluetoothColor = indicatorColor(state.bluetoothEnabled)
+        val networkColor = indicatorColor(state.networkConnected)
+        val homeAssistantColor = indicatorColor(state.homeAssistantConnected)
+
+        drawWifiStatus(canvas, 162f, 54f, 22f, wifiColor)
+        drawSatelliteStatus(canvas, 238f, 54f, 20f, gpsColor)
+        drawReferenceText(canvas, state.satelliteCount?.toString() ?: "NO", 238f, 83f, 10f, gpsColor, true)
+        drawBluetoothStatus(canvas, 313f, 54f, 21f, bluetoothColor)
+        if (state.bluetoothEnabled == null) drawReferenceText(canvas, "?", 313f, 85f, 10f, bluetoothColor, true)
+
+        drawGlobeStatus(canvas, 954f, 54f, 21f, networkColor)
+        drawReferenceText(canvas, "HA", 954f, 84f, 10f, homeAssistantColor, true)
+        drawThermometerStatus(canvas, 1028f, 53f, 20f, active)
+        val temperature = state.batteryTemperatureC?.let { "${it.toInt()}°" } ?: "--°"
+        drawReferenceText(canvas, temperature, 1070f, 61f, 16f, active, true)
+        drawReferenceText(canvas, state.pendingCount.toString(), 1132f, 61f, 16f, active, true)
+        drawReferenceText(canvas, "Q", 1132f, 83f, 9f, active, true)
+
+        drawSatelliteStatus(canvas, 149f, 521f, 15f, gpsColor)
+        drawReferenceText(canvas, if (state.recording) "REC" else "STBY", 181f, 511f, 12f, indicatorColor(state.recording), true)
+        drawTripTypeStatus(canvas, 230f, 523f, active)
+        drawReferenceText(canvas, state.tripDurationLabel, 294f, 535f, 23f, active, false)
+
+        drawBatteryStatus(canvas, 966f, 522f, state.batteryPercent, state.batteryCharging)
+        drawSunStatus(canvas, 1041f, 522f, active)
+        drawGearStatus(canvas, 1115f, 522f, active)
+    }
+
+    private fun indicatorColor(enabled: Boolean?): Int = when (enabled) {
+        true -> palette.accent
+        false -> Color.rgb(72, 8, 13)
+        null -> Color.rgb(115, 18, 24)
+    }
+
+    private fun drawTripTypeStatus(canvas: Canvas, cx: Float, cy: Float, color: Int) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.color = color
+        canvas.drawRoundRect(RectF(cx - 17f, cy - 21f, cx + 17f, cy + 21f), 2f, 2f, paint)
+        val code = when (state.tripTypeLabel.lowercase()) {
+            "street" -> "S"
+            "snow" -> "N"
+            "water" -> "W"
+            else -> "O"
+        }
+        drawReferenceText(canvas, code, cx, cy + 11f, 28f, color, true)
+    }
+
+    private fun drawBatteryStatus(canvas: Canvas, cx: Float, cy: Float, percentage: Int?, charging: Boolean) {
+        val color = indicatorColor(percentage != null)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.color = color
+        canvas.drawRoundRect(RectF(cx - 12f, cy - 22f, cx + 12f, cy + 21f), 3f, 3f, paint)
+        canvas.drawRect(cx - 5f, cy - 27f, cx + 5f, cy - 22f, paint)
+        percentage?.coerceIn(0, 100)?.let { value ->
+            paint.style = Paint.Style.FILL
+            val fillTop = cy + 18f - 37f * (value / 100f)
+            canvas.drawRect(cx - 8f, fillTop, cx + 8f, cy + 17f, paint)
+        }
+        if (charging) {
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 3f
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.color = Color.WHITE
+            val bolt = Path().apply {
+                moveTo(cx + 2f, cy - 14f)
+                lineTo(cx - 6f, cy + 1f)
+                lineTo(cx, cy + 1f)
+                lineTo(cx - 2f, cy + 14f)
+                lineTo(cx + 7f, cy - 3f)
+                lineTo(cx + 1f, cy - 3f)
+            }
+            canvas.drawPath(bolt, paint)
+        }
+        drawReferenceText(canvas, percentage?.let { "$it%" } ?: "--", cx, cy + 41f, 11f, color, true)
+    }
+
+    private fun drawSunStatus(canvas: Canvas, cx: Float, cy: Float, color: Int) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.color = color
+        canvas.drawCircle(cx, cy, 13f, paint)
+        repeat(8) { index ->
+            val angle = Math.toRadians(index * 45.0)
+            canvas.drawLine(
+                cx + cos(angle).toFloat() * 19f,
+                cy + sin(angle).toFloat() * 19f,
+                cx + cos(angle).toFloat() * 27f,
+                cy + sin(angle).toFloat() * 27f,
+                paint,
+            )
+        }
+        paint.strokeCap = Paint.Cap.BUTT
+    }
+
+    private fun drawGearStatus(canvas: Canvas, cx: Float, cy: Float, color: Int) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 5f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.color = color
+        canvas.drawCircle(cx, cy, 15f, paint)
+        canvas.drawCircle(cx, cy, 4f, paint)
+        repeat(8) { index ->
+            val angle = Math.toRadians(index * 45.0)
+            canvas.drawLine(
+                cx + cos(angle).toFloat() * 18f,
+                cy + sin(angle).toFloat() * 18f,
+                cx + cos(angle).toFloat() * 27f,
+                cy + sin(angle).toFloat() * 27f,
+                paint,
+            )
+        }
+        paint.strokeCap = Paint.Cap.BUTT
     }
 
     private fun drawReferenceText(canvas: Canvas, value: String, x: Float, y: Float, size: Float, color: Int, bold: Boolean) {
@@ -243,11 +402,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
         )
     }
 
-    private fun drawWifiStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+    private fun drawWifiStatus(canvas: Canvas, cx: Float, cy: Float, size: Float, color: Int = palette.accent) {
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeWidth = 3f
-        paint.color = palette.accent
+        paint.color = color
         for (radius in floatArrayOf(size, size * 0.68f, size * 0.36f)) {
             canvas.drawArc(RectF(cx - radius, cy - radius * 0.70f, cx + radius, cy + radius * 1.30f), 220f, 100f, false, paint)
         }
@@ -256,8 +415,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.strokeCap = Paint.Cap.BUTT
     }
 
-    private fun drawSatelliteStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
-        paint.color = palette.accent
+    private fun drawSatelliteStatus(canvas: Canvas, cx: Float, cy: Float, size: Float, color: Int = palette.accent) {
+        paint.color = color
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 3f
         paint.strokeCap = Paint.Cap.ROUND
@@ -271,8 +430,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.strokeCap = Paint.Cap.BUTT
     }
 
-    private fun drawBluetoothStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
-        paint.color = palette.accent
+    private fun drawBluetoothStatus(canvas: Canvas, cx: Float, cy: Float, size: Float, color: Int = palette.accent) {
+        paint.color = color
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 3f
         paint.strokeCap = Paint.Cap.ROUND
@@ -292,8 +451,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.strokeCap = Paint.Cap.BUTT
     }
 
-    private fun drawGlobeStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
-        paint.color = palette.accent
+    private fun drawGlobeStatus(canvas: Canvas, cx: Float, cy: Float, size: Float, color: Int = palette.accent) {
+        paint.color = color
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 2.5f
         canvas.drawCircle(cx, cy, size, paint)
@@ -305,8 +464,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.drawCircle(cx + size * 0.72f, cy - size * 0.78f, 4.5f, paint)
     }
 
-    private fun drawThermometerStatus(canvas: Canvas, cx: Float, cy: Float, size: Float) {
-        paint.color = palette.accent
+    private fun drawThermometerStatus(canvas: Canvas, cx: Float, cy: Float, size: Float, color: Int = palette.accent) {
+        paint.color = color
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 3f
         paint.strokeCap = Paint.Cap.ROUND
@@ -561,6 +720,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
                 path.lineTo(cx + size * 0.48f, cy - size * 0.10f)
                 canvas.drawPath(path, paint)
             }
+            CockpitAction.BLUETOOTH -> drawBluetoothStatus(canvas, cx, cy, size * 0.72f, Color.WHITE)
         }
         paint.strokeCap = Paint.Cap.BUTT
     }
