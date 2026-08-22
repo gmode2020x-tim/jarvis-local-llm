@@ -64,7 +64,7 @@ class MainActivityInstrumentedTest {
     fun tripTypesSelectTheMatchingVehicleSceneBackground() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val expectedBackgrounds = listOf(
-            Triple("OFF ROAD", "sxs", R.drawable.dial_mountain_landscape),
+            Triple("OFF ROAD", "sxs", R.drawable.dial_offroad_landscape),
             Triple("STREET", "car", R.drawable.dial_street_landscape),
             Triple("SNOW", "snowmobile", R.drawable.dial_snow_landscape),
             Triple("WATER", "boat", R.drawable.dial_water_landscape),
@@ -116,7 +116,7 @@ class MainActivityInstrumentedTest {
                 val cockpit = root.getChildAt(0) as LandscapeCockpitView
                 assertEquals(Configuration.ORIENTATION_LANDSCAPE, activity.resources.configuration.orientation)
                 assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, activity.requestedOrientation)
-                assertEquals(R.drawable.dial_mountain_landscape, cockpit.activeBackgroundResourceId())
+                assertEquals(R.drawable.dial_offroad_landscape, cockpit.activeBackgroundResourceId())
             }
         }
     }

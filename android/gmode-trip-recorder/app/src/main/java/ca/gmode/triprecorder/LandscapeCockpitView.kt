@@ -264,7 +264,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         "street" -> R.drawable.dial_street_landscape
         "snow" -> R.drawable.dial_snow_landscape
         "water" -> R.drawable.dial_water_landscape
-        else -> R.drawable.dial_mountain_landscape
+        else -> R.drawable.dial_offroad_landscape
     }
 
     private fun activeBackgroundBitmap(): Bitmap {
