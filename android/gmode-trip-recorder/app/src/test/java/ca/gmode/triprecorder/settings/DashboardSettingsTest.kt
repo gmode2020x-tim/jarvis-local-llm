@@ -13,7 +13,7 @@ class DashboardSettingsTest {
         ).normalized()
 
         assertEquals("boat", config.vehicleId)
-        assertEquals(listOf("compass", "speed", "battery"), config.gaugeIds)
+        assertEquals(listOf("compass", "speed"), config.gaugeIds)
     }
 
     @Test
@@ -27,7 +27,7 @@ class DashboardSettingsTest {
     }
 
     @Test
-    fun normalizedCapsDashboardAtTenGauges() {
+    fun normalizedCapsDashboardAtSupportedGaugeCount() {
         val config = DashboardConfig(
             gaugeIds = DashboardSettings.GAUGES.map { it.id },
         ).normalized()

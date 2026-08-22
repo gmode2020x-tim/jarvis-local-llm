@@ -24,9 +24,12 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import ca.gmode.triprecorder.auto.AutoRecordingManager
 import ca.gmode.triprecorder.data.AppDatabase
@@ -75,6 +78,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var liveTelemetryStore: LiveTelemetryStore
     private lateinit var palette: DashboardPalette
     private lateinit var dashboardConfig: DashboardConfig
+    private lateinit var landscapeCockpit: LandscapeCockpitView
+    private var showingSettings = false
+    private var quickTripType = "off_road"
+    private var requestedTripType: String? = null
 
     private lateinit var tripName: EditText
     private lateinit var tripType: Spinner
@@ -112,10 +119,11 @@ class MainActivity : AppCompatActivity() {
     ) { permissions ->
         val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (locationGranted && startAfterPermission) startRecording()
+        if (locationGranted && startAfterPermission) startRecording(requestedTripType)
         if (locationGranted && captureHomeAfterPermission) captureHomeLocation()
         if (locationGranted && saveAutoAfterPermission) saveAutoSettings()
         startAfterPermission = false
+        requestedTripType = null
         captureHomeAfterPermission = false
         saveAutoAfterPermission = false
     }
@@ -134,10 +142,96 @@ class MainActivity : AppCompatActivity() {
         liveTelemetryStore = LiveTelemetryStore(this)
         palette = appearanceSettings.palette()
         dashboardConfig = dashboardSettings.read()
+        quickTripType = autoSettings.read().tripType
         applySystemBarPalette()
-        setContentView(createContent())
-        bindActions()
+        enterImmersiveMode()
+        showCockpitScreen()
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (showingSettings) showCockpitScreen() else finish()
+                }
+            },
+        )
         refreshContinuously()
+    }
+
+    private fun enterImmersiveMode() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private fun showCockpitScreen() {
+        showingSettings = false
+        palette = appearanceSettings.palette()
+        dashboardConfig = dashboardSettings.read()
+        applySystemBarPalette()
+        landscapeCockpit = LandscapeCockpitView(this).apply {
+            setPalette(palette)
+            setState(
+                CockpitState(
+                    vehicleId = dashboardConfig.vehicleId,
+                    vehicleLabel = DashboardSettings.VEHICLES.first { it.id == dashboardConfig.vehicleId }.label,
+                    tripTypeLabel = tripTypeLabel(quickTripType),
+                    automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
+                    readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
+                ),
+            )
+            onAction = ::handleCockpitAction
+        }
+        setContentView(landscapeCockpit)
+    }
+
+    private fun showSettingsScreen() {
+        showingSettings = true
+        setContentView(createContent(showCockpitPreview = false))
+        bindActions()
+    }
+
+    private fun handleCockpitAction(action: CockpitAction) {
+        when (action) {
+            CockpitAction.START -> {
+                requestedTripType = quickTripType
+                if (hasFineLocation()) startRecording(quickTripType) else {
+                    startAfterPermission = true
+                    requestForegroundLocationPermissions()
+                }
+            }
+            CockpitAction.STOP -> TrackingService.stop(this)
+            CockpitAction.AUTO, CockpitAction.SETTINGS, CockpitAction.HOME_ASSISTANT -> showSettingsScreen()
+            CockpitAction.SYNC -> {
+                SyncScheduler.enqueue(this)
+                Toast.makeText(this, "Synchronization queued", Toast.LENGTH_SHORT).show()
+            }
+            CockpitAction.TRIP_TYPE -> {
+                val index = TRIP_TYPE_VALUES.indexOf(quickTripType).coerceAtLeast(0)
+                quickTripType = TRIP_TYPE_VALUES[(index + 1) % TRIP_TYPE_VALUES.size]
+                Toast.makeText(this, "New trips: ${tripTypeLabel(quickTripType)}", Toast.LENGTH_SHORT).show()
+            }
+            CockpitAction.THEME -> {
+                val current = appearanceSettings.read()
+                val index = AppearanceSettings.PRESETS.indexOfFirst { it.id == current.themeId }.coerceAtLeast(0)
+                val next = AppearanceSettings.PRESETS[(index + 1) % AppearanceSettings.PRESETS.size]
+                appearanceSettings.save(AppearanceConfig(next.id, null))
+                palette = appearanceSettings.palette()
+                landscapeCockpit.setPalette(palette)
+                applySystemBarPalette()
+                Toast.makeText(this, next.label, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun tripTypeLabel(value: String): String = TRIP_TYPE_LABELS[
+        TRIP_TYPE_VALUES.indexOf(value).coerceAtLeast(0)
+    ].uppercase()
+
+    private fun placeholderReading(gaugeId: String): CockpitReading {
+        val label = DashboardSettings.GAUGES.firstOrNull { it.id == gaugeId }?.label ?: gaugeId
+        return CockpitReading(label, "--", "waiting")
     }
 
     @Suppress("DEPRECATION")
@@ -158,7 +252,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createContent(): ScrollView {
+    private fun createContent(showCockpitPreview: Boolean = true): ScrollView {
         val scroll = ScrollView(this).apply {
             setBackgroundColor(BACKGROUND)
             isFillViewport = true
@@ -170,6 +264,11 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         dashboardClock = text("--:--", 27f, Color.WHITE, bold = true).apply { gravity = Gravity.END }
+        if (!showCockpitPreview) {
+            val back = dashboardButton("← COCKPIT", filled = false).apply { setOnClickListener { showCockpitScreen() } }
+            content.addView(horizontalViews(back, text("SETTINGS", 18f, ORANGE, bold = true), dashboardClock).withBottom(dp(10)))
+        }
+        if (showCockpitPreview) {
         content.addView(
             horizontalViews(
                 text("GMODE\nTRIP RECORDER", 14f, ORANGE, bold = true),
@@ -209,6 +308,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
         content.addView(cockpitGrid.withBottom(dp(12)))
+        }
 
         recorderStatus = text("Checking recorder…", 17f, Color.WHITE, bold = true)
         telemetryStatus = text("", 13f, MUTED)
@@ -322,7 +422,7 @@ class MainActivity : AppCompatActivity() {
             card(
                 "COCKPIT LAYOUT",
                 labeledInput("VEHICLE PROFILE", vehicleSpinner),
-                text("Enabled gauges fill the dashboard left-to-right in this order. Use the arrows to change each position.", 11f, MUTED),
+                text("Choose exactly two gauges. The first enabled gauge is the large left instrument; the second is the large right instrument. The remaining gauges below are the swap-in catalog.", 11f, MUTED),
                 gaugeRows,
                 horizontalButtons(saveCockpit, vehicleDefaults),
                 zeroLevel,
@@ -381,8 +481,8 @@ class MainActivity : AppCompatActivity() {
         usePresetColor.setOnClickListener { saveAppearance(usePresetAccent = true) }
         saveCockpit.setOnClickListener {
             val selected = gaugeOrder.filter { it in selectedGaugeIds }.take(DashboardSettings.MAX_GAUGES)
-            if (selected.isEmpty()) {
-                Toast.makeText(this, "Enable at least one gauge", Toast.LENGTH_LONG).show()
+            if (selected.size != 2) {
+                Toast.makeText(this, "Choose exactly two main gauges", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
             val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
@@ -436,13 +536,18 @@ class MainActivity : AppCompatActivity() {
         stopButton.setOnClickListener { TrackingService.stop(this) }
     }
 
-    private fun startRecording() {
+    private fun startRecording(requestedType: String? = null) {
         lifecycleScope.launch {
-            val type = TRIP_TYPE_VALUES[tripType.selectedItemPosition]
-            val trip = repository.startTrip(tripName.text.toString(), type)
+            val type = requestedType ?: if (::tripType.isInitialized) {
+                TRIP_TYPE_VALUES[tripType.selectedItemPosition]
+            } else {
+                quickTripType
+            }
+            val name = if (::tripName.isInitialized) tripName.text.toString() else ""
+            val trip = repository.startTrip(name, type)
             TrackingService.start(this@MainActivity, trip.id)
             SyncScheduler.enqueue(this@MainActivity)
-            tripName.text.clear()
+            if (::tripName.isInitialized) tripName.text.clear()
         }
     }
 
@@ -587,33 +692,37 @@ class MainActivity : AppCompatActivity() {
             while (isActive) {
                 val active = repository.activeTrip()
                 val pending = repository.pendingPointCount()
+                val telemetry = liveTelemetryStore.read()
+                val duration = active?.let { Duration.between(Instant.parse(it.startAt), Instant.now()) } ?: Duration.ZERO
+                val gpsLabel: String
                 if (active == null) {
-                    recorderStatus.text = "Ready to record"
-                    telemetryStatus.text = "$pending points waiting to synchronize"
-                    updateCockpit(null, liveTelemetryStore.read(), Duration.ZERO)
-                    setChip(gpsChip, "GPS STANDBY", false)
-                    startButton.isEnabled = true
-                    stopButton.isEnabled = false
+                    if (::recorderStatus.isInitialized) recorderStatus.text = "Ready to record"
+                    if (::telemetryStatus.isInitialized) telemetryStatus.text = "$pending points waiting to synchronize"
+                    updateCockpit(null, telemetry, duration)
+                    gpsLabel = "GPS STANDBY"
+                    if (::gpsChip.isInitialized) setChip(gpsChip, gpsLabel, false)
+                    if (::startButton.isInitialized) startButton.isEnabled = true
+                    if (::stopButton.isInitialized) stopButton.isEnabled = false
                 } else {
-                    val duration = Duration.between(Instant.parse(active.startAt), Instant.now())
                     val speed = ((active.lastSpeedMps ?: 0.0) * 3.6).roundToInt()
-                    recorderStatus.text = "${active.title} • ${formatDuration(duration)}"
-                    telemetryStatus.text = buildString {
+                    if (::recorderStatus.isInitialized) recorderStatus.text = "${active.title} • ${formatDuration(duration)}"
+                    if (::telemetryStatus.isInitialized) telemetryStatus.text = buildString {
                         append("${"%.2f".format(active.distanceMeters / 1000)} km • $speed km/h")
                         active.lastAccuracyMeters?.let { append(" • GPS ±${it.roundToInt()} m") }
                         append("\n${active.pointCount} recorded • $pending waiting to sync")
                     }
-                    updateCockpit(active, liveTelemetryStore.read(), duration)
-                    setChip(gpsChip, active.lastAccuracyMeters?.let { "GPS ±${it.roundToInt()} M" } ?: "GPS SEARCHING", active.lastAccuracyMeters != null)
-                    startButton.isEnabled = false
-                    stopButton.isEnabled = true
+                    updateCockpit(active, telemetry, duration)
+                    gpsLabel = active.lastAccuracyMeters?.let { "GPS ±${it.roundToInt()} M" } ?: "GPS SEARCHING"
+                    if (::gpsChip.isInitialized) setChip(gpsChip, gpsLabel, active.lastAccuracyMeters != null)
+                    if (::startButton.isInitialized) startButton.isEnabled = false
+                    if (::stopButton.isInitialized) stopButton.isEnabled = true
                 }
                 val sync = syncStatus.read()
-                synchronizationStatus.text = buildString {
+                if (::synchronizationStatus.isInitialized) synchronizationStatus.text = buildString {
                     append(sync.state)
                     if (sync.message.isNotBlank()) append(" — ${sync.message}")
                 }
-                setChip(queueChip, "$pending PENDING", pending == 0)
+                if (::queueChip.isInitialized) setChip(queueChip, "$pending PENDING", pending == 0)
                 val configured = secureSettings.baseUrl.isNotBlank() && secureSettings.hasToken()
                 val syncFailed = sync.state.contains("fail", ignoreCase = true) ||
                     sync.state.contains("error", ignoreCase = true) ||
@@ -628,9 +737,32 @@ class MainActivity : AppCompatActivity() {
                     pending > 0 -> "HA SYNCING"
                     else -> "HA READY"
                 }
-                setChip(homeAssistantChip, homeAssistantLabel, syncGood)
-                autoStatus.text = autoState.status()
-                dashboardClock.text = LocalTime.now().format(TIME_FORMAT)
+                if (::homeAssistantChip.isInitialized) setChip(homeAssistantChip, homeAssistantLabel, syncGood)
+                if (::autoStatus.isInitialized) autoStatus.text = autoState.status()
+                val currentTime = LocalTime.now().format(TIME_FORMAT)
+                if (::dashboardClock.isInitialized) dashboardClock.text = currentTime
+                if (::landscapeCockpit.isInitialized && !showingSettings) {
+                    val vehicle = DashboardSettings.VEHICLES.first { it.id == dashboardConfig.vehicleId }
+                    landscapeCockpit.setState(
+                        CockpitState(
+                            time = currentTime,
+                            vehicleId = vehicle.id,
+                            vehicleLabel = vehicle.label,
+                            tripTypeLabel = tripTypeLabel(quickTripType),
+                            recording = active != null,
+                            automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
+                            gpsLabel = gpsLabel,
+                            pendingLabel = "$pending PENDING",
+                            homeAssistantLabel = homeAssistantLabel,
+                            tripLabel = if (active == null) {
+                                "READY • LOCAL-FIRST RECORDING"
+                            } else {
+                                "${active.title.uppercase()} • ${formatDuration(duration)} • ${"%.1f".format(active.distanceMeters / 1000)} KM"
+                            },
+                            readings = dashboardConfig.gaugeIds.map { readingFor(it, active, telemetry, duration) },
+                        ),
+                    )
+                }
                 delay(1_000)
             }
         }
@@ -731,77 +863,79 @@ class MainActivity : AppCompatActivity() {
         duration: Duration,
     ) {
         cockpitGauges.forEach { (id, view) ->
-            val liveForTrip = active != null && telemetry.tripId == active.id
-            val unavailable = if (active == null) "READY" else "WAITING"
-            when (id) {
-                "speed" -> {
-                    val value = if (liveForTrip) telemetry.speedKph else active?.lastSpeedMps?.times(3.6)
-                    view.setReading("Speed", value?.roundToInt()?.toString() ?: "--", "km/h", value?.div(160.0), if (value == null) unavailable else "GPS SPEED")
-                }
-                "trip_time" -> view.setReading("Trip time", formatDuration(duration), "h:mm", duration.toMinutes().div(480.0), if (active == null) "READY" else "RECORDING")
-                "distance" -> {
-                    val value = active?.distanceMeters?.div(1000.0)
-                    view.setReading("Distance", value?.let { "%.1f".format(it) } ?: "--", "km", value?.div(200.0), unavailable)
-                }
-                "altitude" -> {
-                    val value = if (liveForTrip) telemetry.altitudeMeters else active?.lastAltitudeMeters
-                    view.setReading("Altitude", value?.roundToInt()?.toString() ?: "--", "m", value?.plus(100.0)?.div(2100.0), "GPS")
-                }
-                "elevation_gain" -> {
-                    val value = telemetry.elevationGainMeters.takeIf { liveForTrip }
-                    view.setReading("Elevation gain", value?.roundToInt()?.toString() ?: "--", "m", value?.div(1000.0), "ASCENT")
-                }
-                "compass" -> {
-                    val value = telemetry.bearingDegrees.takeIf { liveForTrip }
-                    view.setReading("Compass", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value?.div(360.0), "GPS HEADING")
-                }
-                "pitch" -> angleGauge(
-                    view,
-                    "Pitch",
-                    telemetry.pitchDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) },
-                    unavailable,
-                )
-                "roll" -> angleGauge(
-                    view,
-                    "Roll",
-                    telemetry.rollDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.rollOffsetDegrees) },
-                    unavailable,
-                )
-                "g_force" -> {
-                    val value = telemetry.accelerationPeakMs2?.div(9.80665)?.takeIf { liveForTrip }
-                    view.setReading("G-force", value?.let { "%.2f".format(it) } ?: "--", "g", value?.div(2.0), if (value == null) unavailable else "PEAK")
-                }
-                "battery" -> {
-                    val value = telemetry.batteryPercent.takeIf { liveForTrip }
-                    view.setReading("Phone battery", value?.roundToInt()?.toString() ?: "--", "%", value?.div(100.0), "S24")
-                }
-                "gps_satellites" -> {
-                    val value = telemetry.satelliteCount.takeIf { liveForTrip }
-                    view.setReading("GPS status", value?.toString() ?: "--", "satellites", value?.div(20.0), "USED IN FIX")
-                }
-                "gps_accuracy" -> {
-                    val value = telemetry.accuracyMeters.takeIf { liveForTrip } ?: active?.lastAccuracyMeters
-                    view.setReading("GPS accuracy", value?.roundToInt()?.toString() ?: "--", "± meters", value?.let { (1.0 - it / 100.0).coerceAtLeast(0.0) }, if (value != null) "FIX" else unavailable)
-                }
-                "coordinates" -> {
-                    val coordinate = if (liveForTrip && telemetry.latitude != null && telemetry.longitude != null) {
-                        "%.4f\n%.4f".format(telemetry.latitude, telemetry.longitude)
-                    } else {
-                        "--"
-                    }
-                    view.setReading("Location", coordinate, "lat / lon", if (liveForTrip) 1.0 else null, "GPS")
-                }
-                "pressure" -> {
-                    val value = telemetry.pressureHpa.takeIf { liveForTrip }
-                    view.setReading("Barometer", value?.let { "%.0f".format(it) } ?: "--", "hPa", value?.minus(850.0)?.div(250.0), if (value == null) unavailable else "S24 SENSOR")
-                }
-            }
+            val reading = readingFor(id, active, telemetry, duration)
+            view.setReading(reading.title, reading.value, reading.unit, reading.progress, reading.subtitle)
         }
     }
 
-    private fun angleGauge(view: CockpitGaugeView, label: String, value: Double?, status: String) {
-        view.setReading(label, value?.let { "%+.0f".format(it) } ?: "--", "degrees", value?.let { abs(it) / 45.0 }, if (value == null) status else "S24 ORIENTATION")
+    private fun readingFor(
+        id: String,
+        active: ca.gmode.triprecorder.data.TripEntity?,
+        telemetry: LiveTelemetry,
+        duration: Duration,
+    ): CockpitReading {
+        val liveForTrip = active != null && telemetry.tripId == active.id
+        val unavailable = if (active == null) "READY" else "WAITING"
+        return when (id) {
+            "speed" -> {
+                val value = if (liveForTrip) telemetry.speedKph else active?.lastSpeedMps?.times(3.6)
+                CockpitReading("Speed", value?.roundToInt()?.toString() ?: "--", "km/h", value?.div(160.0), if (value == null) unavailable else "GPS SPEED")
+            }
+            "trip_time" -> CockpitReading("Trip time", formatDuration(duration), "h:mm", duration.toMinutes().div(480.0), if (active == null) "READY" else "RECORDING")
+            "distance" -> {
+                val value = active?.distanceMeters?.div(1000.0)
+                CockpitReading("Distance", value?.let { "%.1f".format(it) } ?: "--", "km", value?.div(200.0), if (value == null) unavailable else "TRIP")
+            }
+            "altitude" -> {
+                val value = if (liveForTrip) telemetry.altitudeMeters else active?.lastAltitudeMeters
+                CockpitReading("Altitude", value?.roundToInt()?.toString() ?: "--", "m", value?.plus(100.0)?.div(2100.0), if (value == null) unavailable else "GPS")
+            }
+            "elevation_gain" -> {
+                val value = telemetry.elevationGainMeters.takeIf { liveForTrip }
+                CockpitReading("Elevation gain", value?.roundToInt()?.toString() ?: "--", "m", value?.div(1000.0), if (value == null) unavailable else "ASCENT")
+            }
+            "compass" -> {
+                val value = telemetry.bearingDegrees.takeIf { liveForTrip }
+                CockpitReading("Compass", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value?.div(360.0), if (value == null) unavailable else "GPS HEADING", value)
+            }
+            "pitch" -> angleReading("Pitch", telemetry.pitchDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable)
+            "roll" -> angleReading("Roll", telemetry.rollDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.rollOffsetDegrees) }, unavailable)
+            "g_force" -> {
+                val value = telemetry.accelerationPeakMs2?.div(9.80665)?.takeIf { liveForTrip }
+                CockpitReading("G-force", value?.let { "%.2f".format(it) } ?: "--", "g", value?.div(2.0), if (value == null) unavailable else "PEAK")
+            }
+            "battery" -> {
+                val value = telemetry.batteryPercent.takeIf { liveForTrip }
+                CockpitReading("Phone battery", value?.roundToInt()?.toString() ?: "--", "%", value?.div(100.0), if (value == null) unavailable else "S24")
+            }
+            "gps_satellites" -> {
+                val value = telemetry.satelliteCount.takeIf { liveForTrip }
+                CockpitReading("GPS status", value?.toString() ?: "--", "satellites", value?.div(20.0), if (value == null) unavailable else "USED IN FIX")
+            }
+            "gps_accuracy" -> {
+                val value = telemetry.accuracyMeters.takeIf { liveForTrip } ?: active?.lastAccuracyMeters
+                CockpitReading("GPS accuracy", value?.roundToInt()?.toString() ?: "--", "± meters", value?.let { (1.0 - it / 100.0).coerceAtLeast(0.0) }, if (value != null) "FIX" else unavailable)
+            }
+            "coordinates" -> {
+                val coordinate = if (liveForTrip && telemetry.latitude != null && telemetry.longitude != null) "%.4f  %.4f".format(telemetry.latitude, telemetry.longitude) else "--"
+                CockpitReading("Location", coordinate, "lat / lon", if (liveForTrip) 1.0 else null, if (liveForTrip) "GPS" else unavailable)
+            }
+            "pressure" -> {
+                val value = telemetry.pressureHpa.takeIf { liveForTrip }
+                CockpitReading("Barometer", value?.let { "%.0f".format(it) } ?: "--", "hPa", value?.minus(850.0)?.div(250.0), if (value == null) unavailable else "S24 SENSOR")
+            }
+            else -> placeholderReading(id)
+        }
     }
+
+    private fun angleReading(label: String, value: Double?, status: String): CockpitReading = CockpitReading(
+        label,
+        value?.let { "%+.0f".format(it) } ?: "--",
+        "degrees",
+        value?.let { abs(it) / 45.0 },
+        if (value == null) status else "S24 ORIENTATION",
+        value,
+    )
 
     private fun normalizeAngle(value: Double): Double = ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
 

@@ -49,7 +49,7 @@ class DashboardSettings(context: Context) {
 
     companion object {
         const val DEFAULT_VEHICLE_ID = "atv_utv"
-        const val MAX_GAUGES = 10
+        const val MAX_GAUGES = 2
 
         val VEHICLES = listOf(
             VehicleProfile("car", "Car"),
@@ -78,11 +78,11 @@ class DashboardSettings(context: Context) {
         )
 
         fun defaultGauges(vehicleId: String): List<String> = when (vehicleId) {
-            "boat" -> listOf("speed", "compass", "gps_accuracy", "coordinates", "distance", "trip_time", "battery", "pressure")
-            "snowmobile" -> listOf("speed", "compass", "altitude", "g_force", "distance", "trip_time", "gps_satellites", "battery")
-            "motorcycle" -> listOf("speed", "roll", "compass", "altitude", "g_force", "distance", "trip_time", "battery")
-            "car", "truck" -> listOf("speed", "compass", "altitude", "g_force", "distance", "trip_time", "gps_accuracy", "battery")
-            else -> listOf("pitch", "roll", "speed", "altitude", "compass", "g_force", "gps_satellites", "trip_time")
+            "boat" -> listOf("speed", "compass")
+            "snowmobile" -> listOf("speed", "compass")
+            "motorcycle" -> listOf("speed", "roll")
+            "car", "truck" -> listOf("speed", "compass")
+            else -> listOf("pitch", "roll")
         }
 
         private const val PREFS = "dashboard_settings"

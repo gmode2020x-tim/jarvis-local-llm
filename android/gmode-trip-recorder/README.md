@@ -4,9 +4,9 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 
 ## Current capabilities
 
-- Configurable automotive cockpit inspired by Tim's references: a live two-column instrument grid, glanceable GPS/queue/Home Assistant indicators, and large driving-friendly controls.
+- Full-screen landscape automotive cockpit following Tim's reference: two dominant swappable instruments, four controls on each side, glanceable GPS/queue/Home Assistant indicators, and no scrolling while driving.
 - User-selectable GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color.
-- Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Enable up to ten gauges and move them into the desired position.
+- Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Choose exactly two active gauges: the first occupies the large left instrument and the second occupies the large right instrument.
 - One-touch pitch/roll zeroing compensates for the phone mount angle.
 - Real S24 telemetry gauges for speed, pitch, roll, G-force, altitude/elevation gain, compass, battery, GNSS satellites/accuracy, coordinates, barometer, distance, and trip time. Unavailable readings remain visibly blank instead of being simulated.
 
@@ -48,7 +48,7 @@ On first use:
 6. For automatic recording, stand at home, press **Use current location**, enable **Start when I leave home**, adjust the distance/time fields, and press **Save auto settings**.
 7. When Android opens the app settings, choose **Permissions > Location > Allow all the time**. Return to the app and press **Save auto settings** again. The status must say **Armed** before relying on automatic departure recording.
 8. Under **Appearance**, select a dashboard theme. Optionally enter a custom six-digit color such as `#D946EF`, then press **Save + Apply Theme**.
-9. Under **Cockpit layout**, choose a vehicle, enable the gauges you want, and use the arrows to place them. The first enabled gauge is top-left, the second top-right, and the rest continue row-by-row.
+9. Under **Cockpit layout**, choose a vehicle and enable exactly two gauges from the catalog. Use the arrows to place one in the large left instrument and the other in the large right instrument.
 
 Geofence delivery is optimized for battery life, so an exit or return can be reported a short time after crossing the boundary. A 250 m home radius and 5 minute return delay are the defaults and are a practical starting point for driving.
 
