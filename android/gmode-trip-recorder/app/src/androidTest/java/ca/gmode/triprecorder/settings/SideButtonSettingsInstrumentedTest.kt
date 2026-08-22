@@ -25,7 +25,7 @@ class SideButtonSettingsInstrumentedTest {
     }
 
     @Test
-    fun legacyDecorativeDefaultsMigrateToMatchingPhoneActions() {
+    fun legacyDecorativeDefaultsMigrateToNewSixButtonLayout() {
         preferences().edit()
             .putString("LEFT_TOP_target", SideButtonSettings.ACTION_START)
             .putString("LEFT_MIDDLE_target", SideButtonSettings.ACTION_TRIP_TYPE)
@@ -34,9 +34,49 @@ class SideButtonSettingsInstrumentedTest {
 
         val bySlot = SideButtonSettings(context).read().associateBy { it.slot }
 
-        assertEquals(SideButtonSettings.ACTION_OPEN_RADIO, bySlot.getValue(SideButtonSlot.LEFT_TOP).target)
+        assertPreferredAppOrFallback(
+            bySlot.getValue(SideButtonSlot.LEFT_TOP),
+            "SPOTIFY",
+            "com.spotify.music",
+            SideButtonSettings.ACTION_OPEN_MUSIC,
+            "app",
+        )
+        assertPreferredAppOrFallback(
+            bySlot.getValue(SideButtonSlot.LEFT_MIDDLE),
+            "NAVI",
+            "com.google.android.apps.maps",
+            SideButtonSettings.ACTION_OPEN_NAVIGATION,
+            "app",
+        )
+        assertEquals("TRIP", bySlot.getValue(SideButtonSlot.RIGHT_TOP).label)
+        assertEquals(SideButtonSettings.ACTION_TRIP_TYPE, bySlot.getValue(SideButtonSlot.RIGHT_TOP).target)
+        assertEquals("settings", bySlot.getValue(SideButtonSlot.RIGHT_TOP).iconId)
+    }
+
+    @Test
+    fun previousFactoryDefaultsMigrateButCustomizedButtonsRemain() {
+        preferences().edit()
+            .putInt("defaults_version", 2)
+            .putString("LEFT_TOP_label", "RADIO")
+            .putString("LEFT_TOP_target", SideButtonSettings.ACTION_OPEN_RADIO)
+            .putString("LEFT_TOP_icon", "radio")
+            .putString("LEFT_MIDDLE_label", "TRAILS")
+            .putString("LEFT_MIDDLE_target", SideButtonSettings.ACTION_OPEN_NAVIGATION)
+            .putString("LEFT_MIDDLE_icon", "navigation")
+            .commit()
+
+        val bySlot = SideButtonSettings(context).read().associateBy { it.slot }
+
+        assertPreferredAppOrFallback(
+            bySlot.getValue(SideButtonSlot.LEFT_TOP),
+            "SPOTIFY",
+            "com.spotify.music",
+            SideButtonSettings.ACTION_OPEN_MUSIC,
+            "app",
+        )
+        assertEquals("TRAILS", bySlot.getValue(SideButtonSlot.LEFT_MIDDLE).label)
         assertEquals(SideButtonSettings.ACTION_OPEN_NAVIGATION, bySlot.getValue(SideButtonSlot.LEFT_MIDDLE).target)
-        assertEquals(SideButtonSettings.ACTION_OPEN_PHONE, bySlot.getValue(SideButtonSlot.RIGHT_TOP).target)
+        assertEquals("navigation", bySlot.getValue(SideButtonSlot.LEFT_MIDDLE).iconId)
     }
 
     @Test
@@ -55,4 +95,18 @@ class SideButtonSettingsInstrumentedTest {
     }
 
     private fun preferences() = context.getSharedPreferences("side_button_settings", Context.MODE_PRIVATE)
+
+    private fun assertPreferredAppOrFallback(
+        config: SideButtonConfig,
+        expectedLabel: String,
+        expectedPackage: String,
+        fallbackTarget: String,
+        expectedIcon: String,
+    ) {
+        assertEquals(expectedLabel, config.label)
+        val targetMatches = config.target == fallbackTarget ||
+            (config.target.startsWith(SideButtonSettings.APP_PREFIX) && config.target.contains(expectedPackage))
+        assertEquals(true, targetMatches)
+        assertEquals(expectedIcon, config.iconId)
+    }
 }

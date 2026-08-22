@@ -407,6 +407,16 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     private fun drawSideButtonIcon(canvas: Canvas, config: SideButtonConfig, cx: Float, cy: Float, size: Float) {
         if (config.iconId == "app" && drawTargetAppIcon(canvas, config.target, cx, cy, size * 1.85f)) return
+        val iconId = if (config.iconId == "app") {
+            when (config.target) {
+                SideButtonSettings.ACTION_OPEN_MUSIC -> "music"
+                SideButtonSettings.ACTION_OPEN_NAVIGATION -> "navigation"
+                SideButtonSettings.ACTION_OPEN_CAMERA -> "camera"
+                else -> "apps"
+            }
+        } else {
+            config.iconId
+        }
 
         paint.shader = null
         paint.color = Color.WHITE
@@ -415,7 +425,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeJoin = Paint.Join.ROUND
         val path = Path()
-        when (config.iconId) {
+        when (iconId) {
             "radio" -> {
                 canvas.drawRoundRect(RectF(cx - size, cy - size * .55f, cx + size, cy + size * .65f), 4f, 4f, paint)
                 canvas.drawCircle(cx + size * .45f, cy + size * .05f, size * .28f, paint)
@@ -437,6 +447,15 @@ class LandscapeCockpitView(context: Context) : View(context) {
                 paint.style = Paint.Style.FILL
                 canvas.drawOval(RectF(cx - size * .85f, cy + size * .35f, cx - size * .08f, cy + size), paint)
                 canvas.drawOval(RectF(cx + size * .02f, cy + size * .1f, cx + size * .8f, cy + size * .75f), paint)
+            }
+            "camera" -> {
+                canvas.drawRoundRect(RectF(cx - size, cy - size * .65f, cx + size, cy + size * .72f), 7f, 7f, paint)
+                canvas.drawCircle(cx, cy + size * .03f, size * .46f, paint)
+                path.moveTo(cx - size * .62f, cy - size * .65f)
+                path.lineTo(cx - size * .38f, cy - size)
+                path.lineTo(cx + size * .25f, cy - size)
+                path.lineTo(cx + size * .48f, cy - size * .65f)
+                canvas.drawPath(path, paint)
             }
             "phone" -> {
                 paint.strokeWidth = size * .28f

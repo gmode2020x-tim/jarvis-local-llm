@@ -338,6 +338,7 @@ class MainActivity : AppCompatActivity() {
             SideButtonSettings.ACTION_OPEN_RADIO,
             SideButtonSettings.ACTION_OPEN_NAVIGATION,
             SideButtonSettings.ACTION_OPEN_MUSIC,
+            SideButtonSettings.ACTION_OPEN_CAMERA,
             SideButtonSettings.ACTION_OPEN_PHONE,
             SideButtonSettings.ACTION_OPEN_BROWSER,
             SideButtonSettings.ACTION_OPEN_APPS,
@@ -360,6 +361,10 @@ class MainActivity : AppCompatActivity() {
             SideButtonSettings.ACTION_OPEN_MUSIC -> listOf(
                 Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MUSIC),
                 Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com")),
+            )
+            SideButtonSettings.ACTION_OPEN_CAMERA -> listOf(
+                Intent("android.media.action.STILL_IMAGE_CAMERA"),
+                Intent("android.media.action.IMAGE_CAPTURE"),
             )
             SideButtonSettings.ACTION_OPEN_PHONE -> listOf(Intent(Intent.ACTION_DIAL, Uri.parse("tel:")))
             SideButtonSettings.ACTION_OPEN_BROWSER -> listOf(
