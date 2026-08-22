@@ -17,6 +17,7 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -36,10 +37,14 @@ import ca.gmode.triprecorder.settings.AutoRecordingStateStore
 import ca.gmode.triprecorder.settings.AppearanceConfig
 import ca.gmode.triprecorder.settings.AppearanceSettings
 import ca.gmode.triprecorder.settings.DashboardPalette
+import ca.gmode.triprecorder.settings.DashboardConfig
+import ca.gmode.triprecorder.settings.DashboardSettings
 import ca.gmode.triprecorder.settings.SecureSettings
 import ca.gmode.triprecorder.sync.SyncScheduler
 import ca.gmode.triprecorder.sync.SyncStatusStore
 import ca.gmode.triprecorder.tracking.TrackingService
+import ca.gmode.triprecorder.tracking.LiveTelemetry
+import ca.gmode.triprecorder.tracking.LiveTelemetryStore
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -55,6 +60,7 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
     private lateinit var repository: RecordingRepository
@@ -65,7 +71,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var autoManager: AutoRecordingManager
     private lateinit var fusedLocation: FusedLocationProviderClient
     private lateinit var appearanceSettings: AppearanceSettings
+    private lateinit var dashboardSettings: DashboardSettings
+    private lateinit var liveTelemetryStore: LiveTelemetryStore
     private lateinit var palette: DashboardPalette
+    private lateinit var dashboardConfig: DashboardConfig
 
     private lateinit var tripName: EditText
     private lateinit var tripType: Spinner
@@ -78,7 +87,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var queueChip: TextView
     private lateinit var homeAssistantChip: TextView
     private lateinit var dashboardClock: TextView
-    private lateinit var gauge: DashboardGaugeView
+    private val cockpitGauges = linkedMapOf<String, CockpitGaugeView>()
     private lateinit var startButton: MaterialButton
     private lateinit var stopButton: MaterialButton
     private lateinit var autoEnabledSwitch: MaterialSwitch
@@ -121,7 +130,10 @@ class MainActivity : AppCompatActivity() {
         autoManager = AutoRecordingManager(this)
         fusedLocation = LocationServices.getFusedLocationProviderClient(this)
         appearanceSettings = AppearanceSettings(this)
+        dashboardSettings = DashboardSettings(this)
+        liveTelemetryStore = LiveTelemetryStore(this)
         palette = appearanceSettings.palette()
+        dashboardConfig = dashboardSettings.read()
         applySystemBarPalette()
         setContentView(createContent())
         bindActions()
@@ -170,20 +182,33 @@ class MainActivity : AppCompatActivity() {
         homeAssistantChip = statusChip("HA CHECKING")
         content.addView(horizontalViews(gpsChip, queueChip, homeAssistantChip).withBottom(dp(10)))
 
-        gauge = DashboardGaugeView(this)
+        val vehicleLabel = DashboardSettings.VEHICLES.first { it.id == dashboardConfig.vehicleId }.label
         content.addView(
-            MaterialCardView(this).apply {
-                radius = dp(22).toFloat()
-                strokeWidth = dp(1)
-                strokeColor = OUTLINE
-                setCardBackgroundColor(BACKGROUND)
-                addView(gauge)
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    bottomMargin = dp(12)
-                }
-            },
+            horizontalViews(
+                text("$vehicleLabel COCKPIT", 12f, Color.WHITE, bold = true),
+                text("LIVE S24 TELEMETRY", 10f, ORANGE, bold = true).apply { gravity = Gravity.END },
+            ).withBottom(dp(6)),
         )
-        gauge.setPalette(palette)
+        val cockpitGrid = GridLayout(this).apply {
+            columnCount = 2
+            alignmentMode = GridLayout.ALIGN_BOUNDS
+            useDefaultMargins = false
+        }
+        cockpitGauges.clear()
+        dashboardConfig.gaugeIds.forEach { gaugeId ->
+            val gaugeView = CockpitGaugeView(this).apply { setPalette(palette) }
+            cockpitGauges[gaugeId] = gaugeView
+            cockpitGrid.addView(
+                gaugeView,
+                GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = dp(154)
+                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
+                },
+            )
+        }
+        content.addView(cockpitGrid.withBottom(dp(12)))
 
         recorderStatus = text("Checking recorder…", 17f, Color.WHITE, bold = true)
         telemetryStatus = text("", 13f, MUTED)
@@ -276,6 +301,34 @@ class MainActivity : AppCompatActivity() {
             ),
         )
 
+        val vehicleSpinner = Spinner(this).apply {
+            adapter = labelAdapter(DashboardSettings.VEHICLES.map { it.label })
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            setSelection(DashboardSettings.VEHICLES.indexOfFirst { it.id == dashboardConfig.vehicleId }.coerceAtLeast(0))
+        }
+        val gaugeOrder = (
+            dashboardConfig.gaugeIds + DashboardSettings.GAUGES.map { it.id }.filterNot { it in dashboardConfig.gaugeIds }
+            ).toMutableList()
+        val selectedGaugeIds = dashboardConfig.gaugeIds.toMutableSet()
+        val gaugeRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val renderRows = {
+            renderGaugeRows(gaugeRows, gaugeOrder, selectedGaugeIds)
+        }
+        renderRows()
+        val saveCockpit = dashboardButton("SAVE + APPLY COCKPIT", filled = true)
+        val vehicleDefaults = dashboardButton("USE VEHICLE DEFAULTS", filled = false)
+        val zeroLevel = dashboardButton("ZERO PITCH + ROLL", filled = false)
+        content.addView(
+            card(
+                "COCKPIT LAYOUT",
+                labeledInput("VEHICLE PROFILE", vehicleSpinner),
+                text("Enabled gauges fill the dashboard left-to-right in this order. Use the arrows to change each position.", 11f, MUTED),
+                gaugeRows,
+                horizontalButtons(saveCockpit, vehicleDefaults),
+                zeroLevel,
+            ),
+        )
+
         baseUrl = editText("Home Assistant URL").apply { setText(secureSettings.baseUrl) }
         token = editText(if (secureSettings.hasToken()) "Access token saved — leave blank to keep it" else "Long-lived access token").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -326,6 +379,47 @@ class MainActivity : AppCompatActivity() {
         locationPermission.setOnClickListener { openAppLocationSettings() }
         saveTheme.setOnClickListener { saveAppearance(usePresetAccent = false) }
         usePresetColor.setOnClickListener { saveAppearance(usePresetAccent = true) }
+        saveCockpit.setOnClickListener {
+            val selected = gaugeOrder.filter { it in selectedGaugeIds }.take(DashboardSettings.MAX_GAUGES)
+            if (selected.isEmpty()) {
+                Toast.makeText(this, "Enable at least one gauge", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
+            dashboardSettings.save(
+                DashboardConfig(
+                    vehicle.id,
+                    selected,
+                    dashboardConfig.pitchOffsetDegrees,
+                    dashboardConfig.rollOffsetDegrees,
+                ),
+            )
+            Toast.makeText(this, "${vehicle.label} cockpit applied", Toast.LENGTH_SHORT).show()
+            recreate()
+        }
+        vehicleDefaults.setOnClickListener {
+            val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
+            val defaults = DashboardSettings.defaultGauges(vehicle.id)
+            selectedGaugeIds.clear()
+            selectedGaugeIds.addAll(defaults)
+            gaugeOrder.clear()
+            gaugeOrder.addAll(defaults + DashboardSettings.GAUGES.map { it.id }.filterNot { it in defaults })
+            renderRows()
+        }
+        zeroLevel.setOnClickListener {
+            val telemetry = liveTelemetryStore.read()
+            if (telemetry.pitchDegrees == null || telemetry.rollDegrees == null) {
+                Toast.makeText(this, "Start a trip and wait for S24 orientation data before zeroing", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val vehicle = DashboardSettings.VEHICLES[vehicleSpinner.selectedItemPosition]
+            val selected = gaugeOrder.filter { it in selectedGaugeIds }.take(DashboardSettings.MAX_GAUGES)
+            dashboardSettings.save(
+                DashboardConfig(vehicle.id, selected, telemetry.pitchDegrees, telemetry.rollDegrees),
+            )
+            Toast.makeText(this, "Pitch and roll zeroed for this phone mount", Toast.LENGTH_SHORT).show()
+            recreate()
+        }
         refreshAutoUi()
         return scroll
     }
@@ -496,7 +590,7 @@ class MainActivity : AppCompatActivity() {
                 if (active == null) {
                     recorderStatus.text = "Ready to record"
                     telemetryStatus.text = "$pending points waiting to synchronize"
-                    gauge.setTelemetry(false, "READY", 0, 0.0, "0:00", null)
+                    updateCockpit(null, liveTelemetryStore.read(), Duration.ZERO)
                     setChip(gpsChip, "GPS STANDBY", false)
                     startButton.isEnabled = true
                     stopButton.isEnabled = false
@@ -509,14 +603,7 @@ class MainActivity : AppCompatActivity() {
                         active.lastAccuracyMeters?.let { append(" • GPS ±${it.roundToInt()} m") }
                         append("\n${active.pointCount} recorded • $pending waiting to sync")
                     }
-                    gauge.setTelemetry(
-                        true,
-                        active.title,
-                        speed,
-                        active.distanceMeters / 1000,
-                        formatDuration(duration),
-                        active.lastAccuracyMeters?.roundToInt(),
-                    )
+                    updateCockpit(active, liveTelemetryStore.read(), duration)
                     setChip(gpsChip, active.lastAccuracyMeters?.let { "GPS ±${it.roundToInt()} M" } ?: "GPS SEARCHING", active.lastAccuracyMeters != null)
                     startButton.isEnabled = false
                     stopButton.isEnabled = true
@@ -566,6 +653,161 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(14)
             }
         }
+    }
+
+    private fun renderGaugeRows(
+        container: LinearLayout,
+        order: MutableList<String>,
+        selected: MutableSet<String>,
+    ) {
+        container.removeAllViews()
+        order.forEachIndexed { index, gaugeId ->
+            val definition = DashboardSettings.GAUGES.first { it.id == gaugeId }
+            val toggle = MaterialSwitch(this).apply {
+                text = definition.label
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                isChecked = gaugeId in selected
+                thumbTintList = checkedStateList(ORANGE, Color.parseColor("#777777"))
+                trackTintList = checkedStateList(palette.activeSurface, Color.parseColor("#333333"))
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) {
+                        if (selected.size >= DashboardSettings.MAX_GAUGES) {
+                            isChecked = false
+                            Toast.makeText(this@MainActivity, "Choose up to ${DashboardSettings.MAX_GAUGES} gauges", Toast.LENGTH_SHORT).show()
+                        } else {
+                            selected.add(gaugeId)
+                        }
+                    } else {
+                        selected.remove(gaugeId)
+                    }
+                }
+            }
+            val up = smallOrderButton("▲", "Move ${definition.label} up").apply {
+                isEnabled = index > 0
+                setOnClickListener {
+                    java.util.Collections.swap(order, index, index - 1)
+                    renderGaugeRows(container, order, selected)
+                }
+            }
+            val down = smallOrderButton("▼", "Move ${definition.label} down").apply {
+                isEnabled = index < order.lastIndex
+                setOnClickListener {
+                    java.util.Collections.swap(order, index, index + 1)
+                    renderGaugeRows(container, order, selected)
+                }
+            }
+            container.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(toggle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(up)
+                    addView(down)
+                }.withBottom(dp(3)),
+            )
+        }
+    }
+
+    private fun smallOrderButton(label: String, description: String): MaterialButton = MaterialButton(this).apply {
+        text = label
+        contentDescription = description
+        textSize = 13f
+        minWidth = dp(42)
+        minimumWidth = dp(42)
+        minHeight = dp(38)
+        insetTop = 0
+        insetBottom = 0
+        setPadding(0, 0, 0, 0)
+        backgroundTintList = stateList(PANEL, palette.inactiveSurface)
+        strokeColor = stateList(OUTLINE, OUTLINE)
+        strokeWidth = dp(1)
+        setTextColor(stateList(ORANGE, Color.parseColor("#555555")))
+    }
+
+    private fun updateCockpit(
+        active: ca.gmode.triprecorder.data.TripEntity?,
+        telemetry: LiveTelemetry,
+        duration: Duration,
+    ) {
+        cockpitGauges.forEach { (id, view) ->
+            val liveForTrip = active != null && telemetry.tripId == active.id
+            val unavailable = if (active == null) "READY" else "WAITING"
+            when (id) {
+                "speed" -> {
+                    val value = if (liveForTrip) telemetry.speedKph else active?.lastSpeedMps?.times(3.6)
+                    view.setReading("Speed", value?.roundToInt()?.toString() ?: "--", "km/h", value?.div(160.0), if (value == null) unavailable else "GPS SPEED")
+                }
+                "trip_time" -> view.setReading("Trip time", formatDuration(duration), "h:mm", duration.toMinutes().div(480.0), if (active == null) "READY" else "RECORDING")
+                "distance" -> {
+                    val value = active?.distanceMeters?.div(1000.0)
+                    view.setReading("Distance", value?.let { "%.1f".format(it) } ?: "--", "km", value?.div(200.0), unavailable)
+                }
+                "altitude" -> {
+                    val value = if (liveForTrip) telemetry.altitudeMeters else active?.lastAltitudeMeters
+                    view.setReading("Altitude", value?.roundToInt()?.toString() ?: "--", "m", value?.plus(100.0)?.div(2100.0), "GPS")
+                }
+                "elevation_gain" -> {
+                    val value = telemetry.elevationGainMeters.takeIf { liveForTrip }
+                    view.setReading("Elevation gain", value?.roundToInt()?.toString() ?: "--", "m", value?.div(1000.0), "ASCENT")
+                }
+                "compass" -> {
+                    val value = telemetry.bearingDegrees.takeIf { liveForTrip }
+                    view.setReading("Compass", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value?.div(360.0), "GPS HEADING")
+                }
+                "pitch" -> angleGauge(
+                    view,
+                    "Pitch",
+                    telemetry.pitchDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) },
+                    unavailable,
+                )
+                "roll" -> angleGauge(
+                    view,
+                    "Roll",
+                    telemetry.rollDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.rollOffsetDegrees) },
+                    unavailable,
+                )
+                "g_force" -> {
+                    val value = telemetry.accelerationPeakMs2?.div(9.80665)?.takeIf { liveForTrip }
+                    view.setReading("G-force", value?.let { "%.2f".format(it) } ?: "--", "g", value?.div(2.0), if (value == null) unavailable else "PEAK")
+                }
+                "battery" -> {
+                    val value = telemetry.batteryPercent.takeIf { liveForTrip }
+                    view.setReading("Phone battery", value?.roundToInt()?.toString() ?: "--", "%", value?.div(100.0), "S24")
+                }
+                "gps_satellites" -> {
+                    val value = telemetry.satelliteCount.takeIf { liveForTrip }
+                    view.setReading("GPS status", value?.toString() ?: "--", "satellites", value?.div(20.0), "USED IN FIX")
+                }
+                "gps_accuracy" -> {
+                    val value = telemetry.accuracyMeters.takeIf { liveForTrip } ?: active?.lastAccuracyMeters
+                    view.setReading("GPS accuracy", value?.roundToInt()?.toString() ?: "--", "± meters", value?.let { (1.0 - it / 100.0).coerceAtLeast(0.0) }, if (value != null) "FIX" else unavailable)
+                }
+                "coordinates" -> {
+                    val coordinate = if (liveForTrip && telemetry.latitude != null && telemetry.longitude != null) {
+                        "%.4f\n%.4f".format(telemetry.latitude, telemetry.longitude)
+                    } else {
+                        "--"
+                    }
+                    view.setReading("Location", coordinate, "lat / lon", if (liveForTrip) 1.0 else null, "GPS")
+                }
+                "pressure" -> {
+                    val value = telemetry.pressureHpa.takeIf { liveForTrip }
+                    view.setReading("Barometer", value?.let { "%.0f".format(it) } ?: "--", "hPa", value?.minus(850.0)?.div(250.0), if (value == null) unavailable else "S24 SENSOR")
+                }
+            }
+        }
+    }
+
+    private fun angleGauge(view: CockpitGaugeView, label: String, value: Double?, status: String) {
+        view.setReading(label, value?.let { "%+.0f".format(it) } ?: "--", "degrees", value?.let { abs(it) / 45.0 }, if (value == null) status else "S24 ORIENTATION")
+    }
+
+    private fun normalizeAngle(value: Double): Double = ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+
+    private fun cardinalDirection(degrees: Double): String {
+        val points = listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        return points[((degrees + 22.5) / 45.0).toInt().mod(points.size)]
     }
 
     private fun horizontalButtons(vararg buttons: MaterialButton): LinearLayout = LinearLayout(this).apply {
@@ -672,6 +914,25 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(if (dropdown) 14 else 10), dp(14), dp(if (dropdown) 14 else 10))
             setBackgroundColor(if (dropdown) preset.panel else Color.TRANSPARENT)
+        }
+    }
+
+    private fun labelAdapter(labels: List<String>): ArrayAdapter<String> = object : ArrayAdapter<String>(
+        this,
+        android.R.layout.simple_spinner_item,
+        labels,
+    ) {
+        override fun getView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View = row(position, false)
+
+        override fun getDropDownView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View = row(position, true)
+
+        private fun row(position: Int, dropdown: Boolean): TextView = TextView(this@MainActivity).apply {
+            text = getItem(position)
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(if (dropdown) 14 else 10), dp(14), dp(if (dropdown) 14 else 10))
+            setBackgroundColor(if (dropdown) PANEL else Color.TRANSPARENT)
         }
     }
 

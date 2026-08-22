@@ -41,6 +41,7 @@ class TrackingService : LifecycleService() {
     private lateinit var repository: RecordingRepository
     private lateinit var sensors: SensorCollector
     private lateinit var locationManager: LocationManager
+    private lateinit var liveTelemetry: LiveTelemetryStore
     private var currentTripId: String? = null
     private var satelliteCount: Int? = null
     private var tracking = false
@@ -69,6 +70,7 @@ class TrackingService : LifecycleService() {
         repository = RecordingRepository(AppDatabase.get(this).tripDao())
         sensors = SensorCollector(this)
         locationManager = getSystemService(LocationManager::class.java)
+        liveTelemetry = LiveTelemetryStore(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -118,6 +120,7 @@ class TrackingService : LifecycleService() {
                 sensors = sensors.snapshotAndReset(),
                 phone = phoneSnapshot(),
             ) ?: return@launch
+            liveTelemetry.update(point, sensors.orientation())
             val speedKmh = (point.speedMps ?: 0.0) * 3.6
             val accuracy = point.accuracyMeters?.let { " ±${it.toInt()} m" }.orEmpty()
             updateNotification("${"%.0f".format(speedKmh)} km/h$accuracy • saved on phone")

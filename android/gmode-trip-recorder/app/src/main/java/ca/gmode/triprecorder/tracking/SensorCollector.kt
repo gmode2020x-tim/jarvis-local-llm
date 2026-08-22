@@ -9,12 +9,18 @@ import ca.gmode.triprecorder.data.SensorSnapshot
 import kotlin.math.abs
 import kotlin.math.sqrt
 
+data class OrientationSnapshot(
+    val pitchDegrees: Double?,
+    val rollDegrees: Double?,
+)
+
 class SensorCollector(context: Context) : SensorEventListener {
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
     private val linearAccelerationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
     private val accelerationSensor = linearAccelerationSensor ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private val gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+    private val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
     private var pressureTotal = 0.0
     private var pressureSamples = 0
@@ -22,11 +28,14 @@ class SensorCollector(context: Context) : SensorEventListener {
     private var accelerationSamples = 0
     private var accelerationPeak = 0.0
     private var gyroscopePeak = 0.0
+    private var pitchDegrees: Double? = null
+    private var rollDegrees: Double? = null
 
     fun start() {
         pressureSensor?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         accelerationSensor?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
         gyroscopeSensor?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+        rotationVectorSensor?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
     }
 
     fun stop() {
@@ -55,6 +64,9 @@ class SensorCollector(context: Context) : SensorEventListener {
     }
 
     @Synchronized
+    fun orientation(): OrientationSnapshot = OrientationSnapshot(pitchDegrees, rollDegrees)
+
+    @Synchronized
     override fun onSensorChanged(event: SensorEvent) {
         when (event.sensor.type) {
             Sensor.TYPE_PRESSURE -> {
@@ -75,6 +87,15 @@ class SensorCollector(context: Context) : SensorEventListener {
             }
 
             Sensor.TYPE_GYROSCOPE -> gyroscopePeak = maxOf(gyroscopePeak, vectorMagnitude(event.values))
+
+            Sensor.TYPE_ROTATION_VECTOR -> {
+                val rotation = FloatArray(9)
+                val orientation = FloatArray(3)
+                SensorManager.getRotationMatrixFromVector(rotation, event.values)
+                SensorManager.getOrientation(rotation, orientation)
+                pitchDegrees = Math.toDegrees(orientation[1].toDouble())
+                rollDegrees = Math.toDegrees(orientation[2].toDouble())
+            }
         }
     }
 
