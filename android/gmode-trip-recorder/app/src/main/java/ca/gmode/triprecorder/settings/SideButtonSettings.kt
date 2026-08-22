@@ -42,14 +42,17 @@ data class SideButtonIcon(val id: String, val label: String)
 class SideButtonSettings(context: Context) {
     private val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun read(): List<SideButtonConfig> = SideButtonSlot.entries.map { slot ->
-        val fallback = DEFAULTS.getValue(slot)
-        SideButtonConfig(
-            slot = slot,
-            label = preferences.getString("${slot.name}_label", fallback.label) ?: fallback.label,
-            target = preferences.getString("${slot.name}_target", fallback.target) ?: fallback.target,
-            iconId = preferences.getString("${slot.name}_icon", fallback.iconId) ?: fallback.iconId,
-        ).normalized()
+    fun read(): List<SideButtonConfig> {
+        migrateLegacyDefaults()
+        return SideButtonSlot.entries.map { slot ->
+            val fallback = DEFAULTS.getValue(slot)
+            SideButtonConfig(
+                slot = slot,
+                label = preferences.getString("${slot.name}_label", fallback.label) ?: fallback.label,
+                target = preferences.getString("${slot.name}_target", fallback.target) ?: fallback.target,
+                iconId = preferences.getString("${slot.name}_icon", fallback.iconId) ?: fallback.iconId,
+            ).normalized()
+        }
     }
 
     fun save(configs: List<SideButtonConfig>) {
@@ -73,6 +76,12 @@ class SideButtonSettings(context: Context) {
         const val ACTION_SYNC = "action:sync"
         const val ACTION_HOME_ASSISTANT = "action:home_assistant"
         const val ACTION_SETTINGS = "action:settings"
+        const val ACTION_OPEN_RADIO = "action:open_radio"
+        const val ACTION_OPEN_NAVIGATION = "action:open_navigation"
+        const val ACTION_OPEN_MUSIC = "action:open_music"
+        const val ACTION_OPEN_PHONE = "action:open_phone"
+        const val ACTION_OPEN_BROWSER = "action:open_browser"
+        const val ACTION_OPEN_APPS = "action:open_apps"
         const val APP_PREFIX = "app:"
 
         val BUILT_IN_TARGETS = listOf(
@@ -83,6 +92,12 @@ class SideButtonSettings(context: Context) {
             SideButtonTarget(ACTION_SYNC, "GMODE — Sync now"),
             SideButtonTarget(ACTION_HOME_ASSISTANT, "GMODE — Home Assistant settings"),
             SideButtonTarget(ACTION_SETTINGS, "GMODE — App settings"),
+            SideButtonTarget(ACTION_OPEN_RADIO, "Phone — Radio / audio app"),
+            SideButtonTarget(ACTION_OPEN_NAVIGATION, "Phone — Navigation app"),
+            SideButtonTarget(ACTION_OPEN_MUSIC, "Phone — Music app"),
+            SideButtonTarget(ACTION_OPEN_PHONE, "Phone — Dialer"),
+            SideButtonTarget(ACTION_OPEN_BROWSER, "Phone — Web browser"),
+            SideButtonTarget(ACTION_OPEN_APPS, "Phone — Installed apps settings"),
         )
 
         val ICONS = listOf(
@@ -101,6 +116,18 @@ class SideButtonSettings(context: Context) {
         )
 
         val DEFAULTS = mapOf(
+            SideButtonSlot.LEFT_TOP to SideButtonConfig(SideButtonSlot.LEFT_TOP, "RADIO", ACTION_OPEN_RADIO, "radio"),
+            SideButtonSlot.LEFT_MIDDLE to SideButtonConfig(SideButtonSlot.LEFT_MIDDLE, "NAVI", ACTION_OPEN_NAVIGATION, "navigation"),
+            SideButtonSlot.LEFT_BOTTOM to SideButtonConfig(SideButtonSlot.LEFT_BOTTOM, "MUSIC", ACTION_OPEN_MUSIC, "music"),
+            SideButtonSlot.RIGHT_TOP to SideButtonConfig(SideButtonSlot.RIGHT_TOP, "PHONE", ACTION_OPEN_PHONE, "phone"),
+            SideButtonSlot.RIGHT_MIDDLE to SideButtonConfig(SideButtonSlot.RIGHT_MIDDLE, "INTERNET", ACTION_OPEN_BROWSER, "internet"),
+            SideButtonSlot.RIGHT_BOTTOM to SideButtonConfig(SideButtonSlot.RIGHT_BOTTOM, "APPS", ACTION_OPEN_APPS, "apps"),
+        )
+
+        private const val PREFS = "side_button_settings"
+        private const val DEFAULTS_VERSION_KEY = "defaults_version"
+        private const val CURRENT_DEFAULTS_VERSION = 2
+        private val LEGACY_DEFAULTS = mapOf(
             SideButtonSlot.LEFT_TOP to SideButtonConfig(SideButtonSlot.LEFT_TOP, "RADIO", ACTION_START, "radio"),
             SideButtonSlot.LEFT_MIDDLE to SideButtonConfig(SideButtonSlot.LEFT_MIDDLE, "NAVI", ACTION_TRIP_TYPE, "navigation"),
             SideButtonSlot.LEFT_BOTTOM to SideButtonConfig(SideButtonSlot.LEFT_BOTTOM, "MUSIC", ACTION_AUTO, "music"),
@@ -108,7 +135,23 @@ class SideButtonSettings(context: Context) {
             SideButtonSlot.RIGHT_MIDDLE to SideButtonConfig(SideButtonSlot.RIGHT_MIDDLE, "INTERNET", ACTION_SYNC, "internet"),
             SideButtonSlot.RIGHT_BOTTOM to SideButtonConfig(SideButtonSlot.RIGHT_BOTTOM, "APPS", ACTION_HOME_ASSISTANT, "apps"),
         )
+    }
 
-        private const val PREFS = "side_button_settings"
+    private fun migrateLegacyDefaults() {
+        if (preferences.getInt(DEFAULTS_VERSION_KEY, 0) >= CURRENT_DEFAULTS_VERSION) return
+        val editor = preferences.edit()
+        SideButtonSlot.entries.forEach { slot ->
+            val legacy = LEGACY_DEFAULTS.getValue(slot)
+            val targetKey = "${slot.name}_target"
+            val savedLabel = preferences.getString("${slot.name}_label", null)
+            val savedIcon = preferences.getString("${slot.name}_icon", null)
+            val isUnchangedLegacyDefault = preferences.getString(targetKey, null) == legacy.target &&
+                (savedLabel == null || savedLabel == legacy.label) &&
+                (savedIcon == null || savedIcon == legacy.iconId)
+            if (isUnchangedLegacyDefault) {
+                editor.remove(targetKey)
+            }
+        }
+        editor.putInt(DEFAULTS_VERSION_KEY, CURRENT_DEFAULTS_VERSION).apply()
     }
 }

@@ -59,11 +59,12 @@ import ca.gmode.triprecorder.settings.SideButtonSlot
 import ca.gmode.triprecorder.settings.SideButtonTarget
 import ca.gmode.triprecorder.sync.SyncScheduler
 import ca.gmode.triprecorder.sync.SyncStatusStore
-import ca.gmode.triprecorder.tracking.TrackingService
+import ca.gmode.triprecorder.tracking.DashboardTelemetry
+import ca.gmode.triprecorder.tracking.LevelCalibration
 import ca.gmode.triprecorder.tracking.LiveTelemetry
 import ca.gmode.triprecorder.tracking.LiveTelemetryStore
-import ca.gmode.triprecorder.tracking.LevelCalibration
 import ca.gmode.triprecorder.tracking.SensorCollector
+import ca.gmode.triprecorder.tracking.TrackingService
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -333,7 +334,61 @@ class MainActivity : AppCompatActivity() {
             SideButtonSettings.ACTION_AUTO, SideButtonSettings.ACTION_SETTINGS -> showSettingsScreen()
             SideButtonSettings.ACTION_SYNC -> handleCockpitAction(CockpitAction.SYNC)
             SideButtonSettings.ACTION_HOME_ASSISTANT -> showSettingsScreen()
+            SideButtonSettings.ACTION_OPEN_RADIO,
+            SideButtonSettings.ACTION_OPEN_NAVIGATION,
+            SideButtonSettings.ACTION_OPEN_MUSIC,
+            SideButtonSettings.ACTION_OPEN_PHONE,
+            SideButtonSettings.ACTION_OPEN_BROWSER,
+            SideButtonSettings.ACTION_OPEN_APPS,
+            -> launchPhoneFunction(config)
             else -> launchInstalledApp(config)
+        }
+    }
+
+    private fun launchPhoneFunction(config: SideButtonConfig) {
+        val candidates = when (config.target) {
+            SideButtonSettings.ACTION_OPEN_RADIO -> listOfNotNull(
+                preferredLauncherIntent(listOf("radio", "tunein", "iheart", "sirius")),
+                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MUSIC),
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=listen+to+radio")),
+            )
+            SideButtonSettings.ACTION_OPEN_NAVIGATION -> listOf(
+                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MAPS),
+                Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=")),
+            )
+            SideButtonSettings.ACTION_OPEN_MUSIC -> listOf(
+                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MUSIC),
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com")),
+            )
+            SideButtonSettings.ACTION_OPEN_PHONE -> listOf(Intent(Intent.ACTION_DIAL, Uri.parse("tel:")))
+            SideButtonSettings.ACTION_OPEN_BROWSER -> listOf(
+                Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER),
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")),
+            )
+            SideButtonSettings.ACTION_OPEN_APPS -> listOf(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS))
+            else -> emptyList()
+        }
+        val intent = candidates.firstOrNull { it.resolveActivity(packageManager) != null }
+        if (intent == null) {
+            Toast.makeText(this, "No app is installed for ${config.label}", Toast.LENGTH_LONG).show()
+            return
+        }
+        runCatching { startActivity(intent) }
+            .onFailure {
+                Toast.makeText(this, "Could not open ${config.label}", Toast.LENGTH_LONG).show()
+            }
+    }
+
+    private fun preferredLauncherIntent(keywords: List<String>): Intent? {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val match = packageManager.queryIntentActivities(launcher, 0).firstOrNull { result ->
+            val label = result.loadLabel(packageManager).toString().lowercase()
+            keywords.any(label::contains)
+        } ?: return null
+        val activity = match.activityInfo ?: return null
+        return Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            component = ComponentName(activity.packageName, activity.name)
         }
     }
 
@@ -1080,9 +1135,17 @@ class MainActivity : AppCompatActivity() {
             while (isActive) {
                 val active = repository.activeTrip()
                 val pending = repository.pendingPointCount()
-                val telemetry = liveTelemetryStore.read()
+                val storedTelemetry = liveTelemetryStore.read()
                 val duration = active?.let { Duration.between(Instant.parse(it.startAt), Instant.now()) } ?: Duration.ZERO
                 val phoneStatus = readDashboardPhoneStatus()
+                val dashboardSensors = if (levelCalibrationInProgress) null else calibrationSensors.snapshotAndReset()
+                val telemetry = DashboardTelemetry.merge(
+                    stored = storedTelemetry,
+                    activeTripId = active?.id,
+                    sensors = dashboardSensors,
+                    orientation = calibrationSensors.orientation(),
+                    batteryPercent = phoneStatus.batteryPercent,
+                )
                 val gpsLabel: String
                 if (active == null) {
                     if (::recorderStatus.isInitialized) recorderStatus.text = "Ready to record"
@@ -1302,14 +1365,14 @@ class MainActivity : AppCompatActivity() {
                 val value = telemetry.bearingDegrees.takeIf { liveForTrip }
                 CockpitReading("Compass", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value?.div(360.0), if (value == null) unavailable else "GPS HEADING", value)
             }
-            "pitch" -> angleReading("Pitch", telemetry.pitchDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable)
-            "roll" -> angleReading("Roll", telemetry.rollDegrees.takeIf { liveForTrip }?.let { normalizeAngle(it - dashboardConfig.rollOffsetDegrees) }, unavailable)
+            "pitch" -> angleReading("Pitch", telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable)
+            "roll" -> angleReading("Roll", telemetry.rollDegrees?.let { normalizeAngle(it - dashboardConfig.rollOffsetDegrees) }, unavailable)
             "g_force" -> {
-                val value = telemetry.accelerationPeakMs2?.div(9.80665)?.takeIf { liveForTrip }
+                val value = telemetry.accelerationPeakMs2?.div(9.80665)
                 CockpitReading("G-force", value?.let { "%.2f".format(it) } ?: "--", "g", value?.div(2.0), if (value == null) unavailable else "PEAK")
             }
             "battery" -> {
-                val value = telemetry.batteryPercent.takeIf { liveForTrip }
+                val value = telemetry.batteryPercent
                 CockpitReading("Phone battery", value?.roundToInt()?.toString() ?: "--", "%", value?.div(100.0), if (value == null) unavailable else "S24")
             }
             "gps_satellites" -> {
@@ -1325,7 +1388,7 @@ class MainActivity : AppCompatActivity() {
                 CockpitReading("Location", coordinate, "lat / lon", if (liveForTrip) 1.0 else null, if (liveForTrip) "GPS" else unavailable)
             }
             "pressure" -> {
-                val value = telemetry.pressureHpa.takeIf { liveForTrip }
+                val value = telemetry.pressureHpa
                 CockpitReading("Barometer", value?.let { "%.0f".format(it) } ?: "--", "hPa", value?.minus(850.0)?.div(250.0), if (value == null) unavailable else "S24 SENSOR")
             }
             else -> placeholderReading(id)

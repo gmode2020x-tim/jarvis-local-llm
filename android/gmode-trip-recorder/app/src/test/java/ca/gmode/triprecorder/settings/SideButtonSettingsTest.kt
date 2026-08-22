@@ -37,4 +37,18 @@ class SideButtonSettingsTest {
     fun everyDashboardSlotHasADefault() {
         assertEquals(SideButtonSlot.entries.toSet(), SideButtonSettings.DEFAULTS.keys)
     }
+
+    @Test
+    fun firstRunLabelsOpenMatchingPhoneFunctions() {
+        val expectedTargets = mapOf(
+            SideButtonSlot.LEFT_TOP to SideButtonSettings.ACTION_OPEN_RADIO,
+            SideButtonSlot.LEFT_MIDDLE to SideButtonSettings.ACTION_OPEN_NAVIGATION,
+            SideButtonSlot.LEFT_BOTTOM to SideButtonSettings.ACTION_OPEN_MUSIC,
+            SideButtonSlot.RIGHT_TOP to SideButtonSettings.ACTION_OPEN_PHONE,
+            SideButtonSlot.RIGHT_MIDDLE to SideButtonSettings.ACTION_OPEN_BROWSER,
+            SideButtonSlot.RIGHT_BOTTOM to SideButtonSettings.ACTION_OPEN_APPS,
+        )
+
+        assertEquals(expectedTargets, SideButtonSettings.DEFAULTS.mapValues { it.value.target })
+    }
 }
