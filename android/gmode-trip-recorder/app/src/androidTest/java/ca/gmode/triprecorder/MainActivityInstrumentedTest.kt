@@ -61,6 +61,29 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
+    fun tripTypesSelectTheMatchingVehicleSceneBackground() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val expectedBackgrounds = listOf(
+            Triple("OFF ROAD", "sxs", R.drawable.dial_mountain_landscape),
+            Triple("STREET", "car", R.drawable.dial_street_landscape),
+            Triple("SNOW", "snowmobile", R.drawable.dial_snow_landscape),
+            Triple("WATER", "boat", R.drawable.dial_water_landscape),
+            Triple("WATER", "seadoo", R.drawable.dial_water_landscape),
+        )
+        val expectedDimensions = 768 to 512
+        val cockpit = LandscapeCockpitView(context)
+
+        expectedBackgrounds.forEach { (tripType, vehicleId, resourceId) ->
+            cockpit.setState(CockpitState(tripTypeLabel = tripType, vehicleId = vehicleId))
+            assertEquals(resourceId, cockpit.activeBackgroundResourceId())
+            BitmapFactory.decodeResource(context.resources, resourceId).also { bitmap ->
+                assertEquals(expectedDimensions.first, bitmap.width)
+                assertEquals(expectedDimensions.second, bitmap.height)
+            }
+        }
+    }
+
+    @Test
     fun launchesFullScreenLandscapeCockpit() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

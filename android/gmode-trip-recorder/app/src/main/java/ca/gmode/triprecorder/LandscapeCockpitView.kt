@@ -99,7 +99,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val utvSide: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_side) }
     private val utvFront: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_front) }
-    private val dialLandscape: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.dial_mountain_landscape) }
+    private val dialBackgroundCache = mutableMapOf<Int, Bitmap>()
     private val dashboardLeather: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.dashboard_black_leather) }
     private val referenceTop: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_top) }
     private val referenceMiddleLeft: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.reference_dashboard_middle_left) }
@@ -141,6 +141,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
     internal fun activeGaugeTitles(): List<String> = state.readings.map { it.title }
 
     internal fun activeSideButtons(): List<SideButtonConfig> = state.sideButtons
+
+    internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel)
 
     internal fun cornerIndicatorSnapshot(): CornerIndicatorSnapshot = CornerIndicatorSnapshot(
         wifiConnected = state.wifiConnected,
@@ -221,7 +223,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         val cy = 278f
         canvas.save()
         canvas.clipCircle(cx, cy, 148f)
-        canvas.drawBitmap(dialLandscape, null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
+        canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
 
         val viewId = DashboardSettings.resolveVehicleView(
             modeId = state.vehicleViewModeId,
@@ -254,6 +256,22 @@ class LandscapeCockpitView(context: Context) : View(context) {
         }
         canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
         canvas.restore()
+    }
+
+    private fun tripTypeBackgroundResourceId(tripTypeLabel: String): Int = when (
+        tripTypeLabel.trim().lowercase().replace('-', '_').replace(' ', '_')
+    ) {
+        "street" -> R.drawable.dial_street_landscape
+        "snow" -> R.drawable.dial_snow_landscape
+        "water" -> R.drawable.dial_water_landscape
+        else -> R.drawable.dial_mountain_landscape
+    }
+
+    private fun activeBackgroundBitmap(): Bitmap {
+        val resourceId = activeBackgroundResourceId()
+        return dialBackgroundCache.getOrPut(resourceId) {
+            BitmapFactory.decodeResource(resources, resourceId)
+        }
     }
 
     private fun findOpaqueBounds(bitmap: Bitmap): Rect {
@@ -1070,7 +1088,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.save()
         canvas.clipCircle(cx, cy, inner)
         val destination = RectF(cx - inner * 1.5f, cy - inner, cx + inner * 1.5f, cy + inner)
-        canvas.drawBitmap(dialLandscape, null, destination, bitmapPaint)
+        canvas.drawBitmap(activeBackgroundBitmap(), null, destination, bitmapPaint)
         paint.style = Paint.Style.FILL
         paint.shader = LinearGradient(
             cx,

@@ -953,7 +953,7 @@ class MainActivity : AppCompatActivity() {
                             time = currentTime,
                             vehicleId = vehicle.id,
                             vehicleLabel = vehicle.label,
-                            tripTypeLabel = tripTypeLabel(quickTripType),
+                            tripTypeLabel = tripTypeLabel(active?.tripType ?: quickTripType),
                             recording = active != null,
                             automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                             gpsLabel = gpsLabel,
