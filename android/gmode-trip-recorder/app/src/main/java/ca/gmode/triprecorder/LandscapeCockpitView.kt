@@ -63,6 +63,9 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
+    private var contentScale = 1f
+    private var contentOffsetX = 0f
+    private var contentOffsetY = 0f
     var onAction: ((CockpitAction) -> Unit)? = null
 
     init {
@@ -88,11 +91,24 @@ class LandscapeCockpitView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         touchZones.clear()
-        val w = width.toFloat()
-        val h = height.toFloat()
-        paint.shader = LinearGradient(0f, 0f, 0f, h, Color.BLACK, palette.background, Shader.TileMode.CLAMP)
-        canvas.drawRect(0f, 0f, w, h, paint)
+        val screenW = width.toFloat()
+        val screenH = height.toFloat()
+        paint.shader = LinearGradient(0f, 0f, 0f, screenH, Color.BLACK, palette.background, Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, screenW, screenH, paint)
         paint.shader = null
+        drawDashboardTexture(canvas, screenW, screenH)
+
+        contentScale = min(screenW / DESIGN_WIDTH, screenH / DESIGN_HEIGHT)
+        contentOffsetX = (screenW - DESIGN_WIDTH * contentScale) / 2f
+        contentOffsetY = (screenH - DESIGN_HEIGHT * contentScale) / 2f
+        canvas.save()
+        canvas.translate(contentOffsetX, contentOffsetY)
+        canvas.scale(contentScale, contentScale)
+        val w = DESIGN_WIDTH
+        val h = DESIGN_HEIGHT
+        paint.color = Color.BLACK
+        paint.style = Paint.Style.FILL
+        canvas.drawRect(0f, 0f, w, h, paint)
         drawDashboardTexture(canvas, w, h)
         drawFrame(canvas, w, h)
         drawHeader(canvas, w, h)
@@ -108,10 +124,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
                 else -> values
             }
         }
-        val heroY = h * 0.50f
-        val heroRadius = min(w * 0.165f, h * 0.43f)
-        drawHeroGauge(canvas, w * 0.345f, heroY, heroRadius, heroReadings[0], sideView = true)
-        drawHeroGauge(canvas, w * 0.655f, heroY, heroRadius, heroReadings[1], sideView = false)
+        val heroY = h * 0.515f
+        val heroRadius = min(w * 0.150f, h * 0.470f)
+        drawHeroGauge(canvas, w * 0.356f, heroY, heroRadius, heroReadings[0], sideView = true)
+        drawHeroGauge(canvas, w * 0.644f, heroY, heroRadius, heroReadings[1], sideView = false)
+        canvas.restore()
     }
 
     private fun drawDashboardTexture(canvas: Canvas, w: Float, h: Float) {
@@ -135,11 +152,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun drawHeader(canvas: Canvas, w: Float, h: Float) {
-        drawText(canvas, state.time, w * 0.035f, h * 0.065f, h * 0.047f, Color.WHITE, Paint.Align.LEFT, true)
-        drawText(canvas, "●  ${state.gpsLabel}", w * 0.18f, h * 0.058f, h * 0.022f, palette.accent, Paint.Align.LEFT, true)
-        drawText(canvas, state.pendingLabel, w * 0.50f, h * 0.058f, h * 0.023f, palette.muted, Paint.Align.CENTER, true)
-        drawText(canvas, state.homeAssistantLabel, w * 0.82f, h * 0.058f, h * 0.022f, palette.accent, Paint.Align.RIGHT, true)
-        drawText(canvas, state.vehicleLabel.uppercase(), w * 0.965f, h * 0.065f, h * 0.027f, Color.WHITE, Paint.Align.RIGHT, true)
+        drawText(canvas, state.time, w * 0.037f, h * 0.123f, h * 0.075f, Color.WHITE, Paint.Align.LEFT, true)
+        drawText(canvas, "●  ${state.gpsLabel}", w * 0.110f, h * 0.115f, h * 0.035f, palette.accent, Paint.Align.LEFT, true)
+        drawText(canvas, state.pendingLabel, w * 0.50f, h * 0.115f, h * 0.034f, palette.muted, Paint.Align.CENTER, true)
+        drawText(canvas, state.homeAssistantLabel, w * 0.870f, h * 0.115f, h * 0.034f, palette.accent, Paint.Align.RIGHT, true)
+        drawText(canvas, state.vehicleLabel.uppercase(), w * 0.970f, h * 0.123f, h * 0.038f, Color.WHITE, Paint.Align.RIGHT, true)
     }
 
     private fun drawSideControls(canvas: Canvas, w: Float, h: Float) {
@@ -155,14 +172,14 @@ class LandscapeCockpitView(context: Context) : View(context) {
             CockpitAction.THEME to "THEME",
             CockpitAction.HOME_ASSISTANT to "HA LINK",
         )
-        val top = h * 0.105f
-        val height = h * 0.18f
-        val gap = h * 0.022f
+        val top = h * 0.181f
+        val height = h * 0.190f
+        val gap = h * 0.017f
         labelsLeft.forEachIndexed { index, pair ->
-            drawControl(canvas, RectF(w * 0.012f, top + index * (height + gap), w * 0.180f, top + index * (height + gap) + height), pair.first, pair.second)
+            drawControl(canvas, RectF(w * 0.009f, top + index * (height + gap), w * 0.174f, top + index * (height + gap) + height), pair.first, pair.second)
         }
         labelsRight.forEachIndexed { index, pair ->
-            drawControl(canvas, RectF(w * 0.820f, top + index * (height + gap), w * 0.988f, top + index * (height + gap) + height), pair.first, pair.second)
+            drawControl(canvas, RectF(w * 0.827f, top + index * (height + gap), w * 0.991f, top + index * (height + gap) + height), pair.first, pair.second)
         }
     }
 
@@ -338,11 +355,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
                 paint,
             )
         }
+        drawTerrain(canvas, cx, cy + radius * 0.04f, radius)
         paint.style = Paint.Style.FILL
         drawText(canvas, reading.title.uppercase(), cx, cy - radius * 0.67f, radius * 0.095f, Color.WHITE, Paint.Align.CENTER, false)
-        drawTerrain(canvas, cx, cy + radius * 0.04f, radius)
         canvas.save()
-        canvas.clipCircle(cx, cy + radius * 0.02f, radius * 0.69f)
+        canvas.clipCircle(cx, cy + radius * 0.02f, radius * 0.75f)
         val tilt = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
         canvas.rotate(tilt * 0.55f, cx, cy)
         if (state.vehicleId == "atv_utv") {
@@ -384,7 +401,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun drawTerrain(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
-        val inner = radius * 0.69f
+        val inner = radius * 0.75f
         canvas.save()
         canvas.clipCircle(cx, cy, inner)
         val destination = RectF(cx - inner * 1.5f, cy - inner, cx + inner * 1.5f, cy + inner)
@@ -420,7 +437,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     private fun drawUtvBitmap(canvas: Canvas, cx: Float, cy: Float, radius: Float, sideView: Boolean) {
         val bitmap = if (sideView) utvSide else utvFront
-        val targetWidth = radius * if (sideView) 1.50f else 1.30f
+        val targetWidth = radius * if (sideView) 1.35f else 1.10f
         val targetHeight = targetWidth * bitmap.height / bitmap.width
         val verticalOffset = if (sideView) radius * 0.04f else radius * 0.02f
         val target = RectF(
@@ -516,7 +533,9 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_UP) {
-            touchZones.entries.firstOrNull { it.value.contains(event.x, event.y) }?.let {
+            val designX = (event.x - contentOffsetX) / contentScale
+            val designY = (event.y - contentOffsetY) / contentScale
+            touchZones.entries.firstOrNull { it.value.contains(designX, designY) }?.let {
                 onAction?.invoke(it.key)
                 performClick()
                 return true
@@ -528,5 +547,10 @@ class LandscapeCockpitView(context: Context) : View(context) {
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    companion object {
+        private const val DESIGN_WIDTH = 1280f
+        private const val DESIGN_HEIGHT = 408f
     }
 }
