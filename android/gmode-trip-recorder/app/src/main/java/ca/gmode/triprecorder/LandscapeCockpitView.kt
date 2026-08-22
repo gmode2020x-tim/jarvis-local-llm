@@ -1,6 +1,8 @@
 package ca.gmode.triprecorder
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -52,6 +54,9 @@ enum class CockpitAction {
 
 class LandscapeCockpitView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val utvSide: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_side) }
+    private val utvFront: Bitmap by lazy { BitmapFactory.decodeResource(resources, R.drawable.utv_front) }
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
@@ -134,8 +139,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
         val labelsRight = listOf(
             CockpitAction.SYNC to "SYNC NOW",
             CockpitAction.TRIP_TYPE to state.tripTypeLabel,
-            CockpitAction.THEME to "COLOR / THEME",
-            CockpitAction.HOME_ASSISTANT to "HOME ASSISTANT",
+            CockpitAction.THEME to "THEME",
+            CockpitAction.HOME_ASSISTANT to "HA LINK",
         )
         val top = h * 0.14f
         val height = h * 0.15f
@@ -162,7 +167,90 @@ class LandscapeCockpitView(context: Context) : View(context) {
         paint.strokeWidth = rect.height() * 0.035f
         canvas.drawLine(rect.left + rect.width() * 0.06f, rect.top + rect.height() * 0.17f, rect.left + rect.width() * 0.06f, rect.bottom - rect.height() * 0.17f, paint)
         paint.style = Paint.Style.FILL
-        drawText(canvas, label, rect.centerX() + rect.width() * 0.04f, rect.centerY() + rect.height() * 0.09f, rect.height() * 0.25f, Color.WHITE, Paint.Align.CENTER, true)
+        drawControlIcon(canvas, action, rect.left + rect.width() * 0.24f, rect.centerY(), rect.height() * 0.25f)
+        drawText(canvas, label, rect.left + rect.width() * 0.42f, rect.centerY() + rect.height() * 0.09f, rect.height() * 0.23f, Color.WHITE, Paint.Align.LEFT, true)
+    }
+
+    private fun drawControlIcon(canvas: Canvas, action: CockpitAction, cx: Float, cy: Float, size: Float) {
+        paint.shader = null
+        paint.color = Color.WHITE
+        paint.strokeWidth = size * 0.16f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        paint.style = Paint.Style.STROKE
+        val path = Path()
+        when (action) {
+            CockpitAction.START -> {
+                paint.style = Paint.Style.FILL
+                path.moveTo(cx - size * 0.46f, cy - size * 0.62f)
+                path.lineTo(cx + size * 0.65f, cy)
+                path.lineTo(cx - size * 0.46f, cy + size * 0.62f)
+                path.close()
+                canvas.drawPath(path, paint)
+            }
+            CockpitAction.STOP -> {
+                paint.style = Paint.Style.FILL
+                canvas.drawRoundRect(RectF(cx - size * 0.53f, cy - size * 0.53f, cx + size * 0.53f, cy + size * 0.53f), size * 0.12f, size * 0.12f, paint)
+            }
+            CockpitAction.AUTO -> {
+                canvas.drawCircle(cx, cy, size * 0.67f, paint)
+                drawText(canvas, "A", cx, cy + size * 0.34f, size * 0.86f, Color.WHITE, Paint.Align.CENTER, true)
+            }
+            CockpitAction.SETTINGS -> {
+                canvas.drawCircle(cx, cy, size * 0.48f, paint)
+                canvas.drawCircle(cx, cy, size * 0.14f, paint)
+                repeat(8) { index ->
+                    val angle = Math.toRadians(index * 45.0)
+                    canvas.drawLine(
+                        cx + cos(angle).toFloat() * size * 0.60f,
+                        cy + sin(angle).toFloat() * size * 0.60f,
+                        cx + cos(angle).toFloat() * size * 0.82f,
+                        cy + sin(angle).toFloat() * size * 0.82f,
+                        paint,
+                    )
+                }
+            }
+            CockpitAction.SYNC -> {
+                canvas.drawArc(RectF(cx - size * 0.62f, cy - size * 0.62f, cx + size * 0.62f, cy + size * 0.62f), 35f, 280f, false, paint)
+                paint.style = Paint.Style.FILL
+                path.moveTo(cx + size * 0.64f, cy - size * 0.28f)
+                path.lineTo(cx + size * 0.72f, cy + size * 0.32f)
+                path.lineTo(cx + size * 0.18f, cy + size * 0.04f)
+                path.close()
+                canvas.drawPath(path, paint)
+            }
+            CockpitAction.TRIP_TYPE -> {
+                path.moveTo(cx - size * 0.68f, cy + size * 0.60f)
+                path.lineTo(cx - size * 0.18f, cy + size * 0.12f)
+                path.lineTo(cx - size * 0.34f, cy - size * 0.15f)
+                path.lineTo(cx + size * 0.62f, cy - size * 0.65f)
+                canvas.drawPath(path, paint)
+            }
+            CockpitAction.THEME -> {
+                canvas.drawCircle(cx, cy, size * 0.38f, paint)
+                repeat(8) { index ->
+                    val angle = Math.toRadians(index * 45.0)
+                    canvas.drawLine(
+                        cx + cos(angle).toFloat() * size * 0.56f,
+                        cy + sin(angle).toFloat() * size * 0.56f,
+                        cx + cos(angle).toFloat() * size * 0.82f,
+                        cy + sin(angle).toFloat() * size * 0.82f,
+                        paint,
+                    )
+                }
+            }
+            CockpitAction.HOME_ASSISTANT -> {
+                path.moveTo(cx - size * 0.68f, cy - size * 0.02f)
+                path.lineTo(cx, cy - size * 0.68f)
+                path.lineTo(cx + size * 0.68f, cy - size * 0.02f)
+                path.moveTo(cx - size * 0.48f, cy - size * 0.10f)
+                path.lineTo(cx - size * 0.48f, cy + size * 0.65f)
+                path.lineTo(cx + size * 0.48f, cy + size * 0.65f)
+                path.lineTo(cx + size * 0.48f, cy - size * 0.10f)
+                canvas.drawPath(path, paint)
+            }
+        }
+        paint.strokeCap = Paint.Cap.BUTT
     }
 
     private fun drawHeroGauge(canvas: Canvas, cx: Float, cy: Float, radius: Float, reading: CockpitReading, sideView: Boolean) {
@@ -171,9 +259,13 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.drawCircle(cx, cy, radius, paint)
         paint.shader = null
         paint.style = Paint.Style.STROKE
+        paint.shader = LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius, Color.parseColor("#757575"), Color.parseColor("#121212"), Shader.TileMode.MIRROR)
+        paint.strokeWidth = radius * 0.105f
+        canvas.drawCircle(cx, cy, radius * 0.955f, paint)
+        paint.shader = null
         paint.color = palette.outline
-        paint.strokeWidth = radius * 0.065f
-        canvas.drawCircle(cx, cy, radius * 0.94f, paint)
+        paint.strokeWidth = radius * 0.035f
+        canvas.drawCircle(cx, cy, radius * 0.89f, paint)
         paint.color = palette.accent
         paint.strokeWidth = radius * 0.022f
         canvas.drawArc(RectF(cx - radius * 0.87f, cy - radius * 0.87f, cx + radius * 0.87f, cy + radius * 0.87f), 205f, 130f, false, paint)
@@ -193,31 +285,103 @@ class LandscapeCockpitView(context: Context) : View(context) {
         }
         paint.style = Paint.Style.FILL
         drawText(canvas, reading.title.uppercase(), cx, cy - radius * 0.70f, radius * 0.14f, Color.WHITE, Paint.Align.CENTER, true)
-        drawHorizon(canvas, cx, cy + radius * 0.05f, radius * 0.66f)
+        drawTerrain(canvas, cx, cy + radius * 0.04f, radius)
         canvas.save()
+        canvas.clipCircle(cx, cy + radius * 0.02f, radius * 0.69f)
         val tilt = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
         canvas.rotate(tilt * 0.55f, cx, cy)
-        drawVehicle(canvas, cx, cy + radius * 0.02f, radius * 0.48f, sideView)
+        if (state.vehicleId == "atv_utv") {
+            drawUtvBitmap(canvas, cx, cy + radius * 0.08f, radius, sideView)
+        } else {
+            drawVehicle(canvas, cx, cy + radius * 0.02f, radius * 0.48f, sideView)
+        }
         canvas.restore()
+        drawAngleLabels(canvas, cx, cy, radius)
         drawText(canvas, reading.value, cx, cy + radius * 0.66f, radius * 0.24f, palette.accent, Paint.Align.CENTER, true)
         drawText(canvas, reading.unit, cx, cy + radius * 0.83f, radius * 0.09f, palette.muted, Paint.Align.CENTER, false)
     }
 
-    private fun drawHorizon(canvas: Canvas, cx: Float, cy: Float, width: Float) {
-        val path = Path().apply {
-            moveTo(cx - width, cy + width * 0.22f)
-            lineTo(cx - width * 0.55f, cy - width * 0.08f)
-            lineTo(cx - width * 0.25f, cy + width * 0.08f)
-            lineTo(cx + width * 0.10f, cy - width * 0.20f)
-            lineTo(cx + width * 0.42f, cy + width * 0.02f)
-            lineTo(cx + width, cy - width * 0.12f)
-            lineTo(cx + width, cy + width * 0.35f)
-            lineTo(cx - width, cy + width * 0.35f)
+    private fun drawAngleLabels(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
+        val labels = listOf(
+            45 to 225.0, 45 to 315.0,
+            15 to 195.0, 15 to 345.0,
+            0 to 180.0, 0 to 0.0,
+            -15 to 165.0, -15 to 15.0,
+            -45 to 135.0, -45 to 45.0,
+        )
+        labels.forEach { (value, degrees) ->
+            val angle = Math.toRadians(degrees)
+            drawText(
+                canvas,
+                "${value}°",
+                cx + cos(angle).toFloat() * radius * 0.62f,
+                cy + sin(angle).toFloat() * radius * 0.62f + radius * 0.025f,
+                radius * 0.072f,
+                palette.muted,
+                Paint.Align.CENTER,
+                false,
+            )
+        }
+    }
+
+    private fun drawTerrain(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
+        val inner = radius * 0.69f
+        canvas.save()
+        canvas.clipCircle(cx, cy, inner)
+        paint.style = Paint.Style.FILL
+        paint.shader = LinearGradient(cx, cy - inner, cx, cy + inner, Color.parseColor("#17314C"), Color.parseColor("#05090E"), Shader.TileMode.CLAMP)
+        canvas.drawRect(cx - inner, cy - inner, cx + inner, cy + inner, paint)
+        paint.shader = null
+
+        val farMountains = Path().apply {
+            moveTo(cx - inner, cy + inner * 0.12f)
+            lineTo(cx - inner * 0.68f, cy - inner * 0.24f)
+            lineTo(cx - inner * 0.36f, cy - inner * 0.02f)
+            lineTo(cx - inner * 0.02f, cy - inner * 0.42f)
+            lineTo(cx + inner * 0.28f, cy - inner * 0.10f)
+            lineTo(cx + inner * 0.58f, cy - inner * 0.30f)
+            lineTo(cx + inner, cy + inner * 0.06f)
+            lineTo(cx + inner, cy + inner)
+            lineTo(cx - inner, cy + inner)
             close()
         }
-        paint.style = Paint.Style.FILL
-        paint.color = Color.argb(115, Color.red(palette.accent), Color.green(palette.accent), Color.blue(palette.accent))
-        canvas.drawPath(path, paint)
+        paint.color = Color.parseColor("#344556")
+        canvas.drawPath(farMountains, paint)
+
+        val nearGround = Path().apply {
+            moveTo(cx - inner, cy + inner * 0.30f)
+            lineTo(cx - inner * 0.55f, cy + inner * 0.08f)
+            lineTo(cx - inner * 0.20f, cy + inner * 0.24f)
+            lineTo(cx + inner * 0.12f, cy + inner * 0.02f)
+            lineTo(cx + inner * 0.48f, cy + inner * 0.22f)
+            lineTo(cx + inner, cy + inner * 0.03f)
+            lineTo(cx + inner, cy + inner)
+            lineTo(cx - inner, cy + inner)
+            close()
+        }
+        paint.shader = LinearGradient(cx, cy, cx, cy + inner, Color.parseColor("#40362F"), Color.parseColor("#0C0B0B"), Shader.TileMode.CLAMP)
+        canvas.drawPath(nearGround, paint)
+        paint.shader = null
+        canvas.restore()
+    }
+
+    private fun drawUtvBitmap(canvas: Canvas, cx: Float, cy: Float, radius: Float, sideView: Boolean) {
+        val bitmap = if (sideView) utvSide else utvFront
+        val targetWidth = radius * if (sideView) 1.50f else 1.30f
+        val targetHeight = targetWidth * bitmap.height / bitmap.width
+        val verticalOffset = if (sideView) radius * 0.04f else radius * 0.02f
+        val target = RectF(
+            cx - targetWidth / 2f,
+            cy - targetHeight / 2f + verticalOffset,
+            cx + targetWidth / 2f,
+            cy + targetHeight / 2f + verticalOffset,
+        )
+        canvas.drawBitmap(bitmap, null, target, bitmapPaint)
+    }
+
+    private fun Canvas.clipCircle(cx: Float, cy: Float, radius: Float) {
+        val clip = Path().apply { addCircle(cx, cy, radius, Path.Direction.CW) }
+        clipPath(clip)
     }
 
     private fun drawVehicle(canvas: Canvas, cx: Float, cy: Float, size: Float, sideView: Boolean) {

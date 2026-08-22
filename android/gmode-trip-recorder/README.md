@@ -4,7 +4,7 @@ Private Android application for offline-first GPS and Samsung phone telemetry. R
 
 ## Current capabilities
 
-- Full-screen landscape automotive cockpit following Tim's reference: two dominant swappable instruments, four controls on each side, glanceable GPS/queue/Home Assistant indicators, and no scrolling while driving.
+- Full-screen landscape automotive cockpit following Tim's reference: two dominant swappable instruments with realistic UTV artwork and mountain terrain, metallic dial bezels, four icon-led controls on each side, glanceable GPS/queue/Home Assistant indicators, and no scrolling while driving.
 - User-selectable GMODE Orange, Electric Blue, Trail Green, Water Cyan, and Snow White dashboard themes, with an optional custom `#RRGGBB` accent color.
 - Car, Truck/4x4, ATV/UTV, Motorcycle, Snowmobile, and Boat profiles with vehicle-specific defaults. Choose exactly two active gauges: the first occupies the large left instrument and the second occupies the large right instrument.
 - One-touch pitch/roll zeroing compensates for the phone mount angle.
