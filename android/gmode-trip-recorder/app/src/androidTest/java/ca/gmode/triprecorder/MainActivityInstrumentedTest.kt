@@ -282,6 +282,40 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
+    fun attitudeLineKeepsAndExpiresAShortRotationHistory() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        fun render(angle: Double) {
+            cockpit.setState(
+                CockpitState(
+                    readings = listOf(CockpitReading("Roll", "${angle.toInt()}°", "", angleDegrees = angle, gaugeId = "roll", numericValue = angle)),
+                ),
+            )
+            cockpit.draw(canvas)
+        }
+
+        render(0.0)
+        render(30.0)
+        repeat(6) {
+            Thread.sleep(55)
+            render(30.0)
+        }
+        assertTrue("rotation should leave multiple fading line positions", cockpit.attitudeTrailAngles().distinct().size >= 3)
+
+        Thread.sleep(1_000)
+        render(30.0)
+        assertTrue("expired history should be pruned", cockpit.attitudeTrailAngles().size <= 1)
+        bitmap.recycle()
+    }
+
+    @Test
     fun tripTypeCyclesSceneAndUserSelectedVehicleTogether() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val settings = DashboardSettings(context)

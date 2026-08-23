@@ -118,6 +118,12 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private var contentOffsetX = 0f
     private var contentOffsetY = 0f
     private var selectedGaugeIndex = 0
+    private var attitudeAnimationGaugeId: String? = null
+    private var attitudeAnimationStart = 0f
+    private var attitudeAnimationTarget = 0f
+    private var attitudeAnimationCurrent = 0f
+    private var attitudeAnimationStartedNanos = 0L
+    private val attitudeTrailSamples = java.util.ArrayDeque<AttitudeTrailSample>()
     private val previousGaugeZone = RectF()
     private val nextGaugeZone = RectF()
     var onAction: ((CockpitAction) -> Unit)? = null
@@ -150,6 +156,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
     internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel, state.offRoadSceneId)
 
     internal fun activeVehicleId(): String = state.vehicleId
+
+    internal fun attitudeTrailAngles(): List<Float> = attitudeTrailSamples.map { it.angle }
 
     internal fun cornerIndicatorSnapshot(): CornerIndicatorSnapshot = CornerIndicatorSnapshot(
         wifiConnected = state.wifiConnected,
@@ -230,6 +238,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private data class VehicleArtwork(val bitmap: Bitmap, val contentBounds: Rect)
+    private data class AttitudeTrailSample(val gaugeId: String, val angle: Float, val timestampNanos: Long)
 
     private fun drawDynamicGaugeScene(canvas: Canvas, reading: CockpitReading) {
         val cx = 640f
@@ -243,9 +252,6 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.clipCircle(cx, cy, 174f)
         if (sceneGauge) {
             canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
-            if (reading.gaugeId == "pitch" || reading.gaugeId == "roll") {
-                drawAttitudeZeroLine(canvas, cx, cy)
-            }
             val viewId = DashboardSettings.resolveVehicleView(
                 modeId = state.vehicleViewModeId,
                 gaugeTitle = reading.title,
@@ -266,8 +272,12 @@ class LandscapeCockpitView(context: Context) : View(context) {
             val targetHeight = bounds.height() * scale
             val targetCy = if (viewId == "side") 290f else 284f
             val target = RectF(cx - targetWidth / 2f, targetCy - targetHeight / 2f, cx + targetWidth / 2f, targetCy + targetHeight / 2f)
-            val tilt = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
-            if (reading.gaugeId == "pitch" || reading.gaugeId == "roll") canvas.rotate(tilt, cx, targetCy)
+            val attitudeGauge = reading.gaugeId == "pitch" || reading.gaugeId == "roll"
+            val tilt = if (attitudeGauge) animatedAttitudeAngle(reading) else 0f
+            if (attitudeGauge) {
+                drawVehicleAttitudeLine(canvas, cx, targetCy, tilt, reading.gaugeId)
+                canvas.rotate(tilt, cx, targetCy)
+            }
             canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
         } else {
             paint.style = Paint.Style.FILL
@@ -285,22 +295,93 @@ class LandscapeCockpitView(context: Context) : View(context) {
         }
     }
 
-    private fun drawAttitudeZeroLine(canvas: Canvas, cx: Float, cy: Float) {
+    private fun animatedAttitudeAngle(reading: CockpitReading): Float {
+        val newTarget = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
+        val now = System.nanoTime()
+        if (attitudeAnimationGaugeId != reading.gaugeId) {
+            attitudeAnimationGaugeId = reading.gaugeId
+            attitudeTrailSamples.clear()
+            attitudeAnimationStart = newTarget
+            attitudeAnimationTarget = newTarget
+            attitudeAnimationCurrent = newTarget
+            attitudeAnimationStartedNanos = now
+            recordAttitudeTrail(reading.gaugeId, newTarget, now)
+            return newTarget
+        }
+        if (kotlin.math.abs(newTarget - attitudeAnimationTarget) > 0.05f) {
+            updateAttitudeAnimation(now)
+            attitudeAnimationStart = attitudeAnimationCurrent
+            attitudeAnimationTarget = newTarget
+            attitudeAnimationStartedNanos = now
+        }
+        updateAttitudeAnimation(now)
+        recordAttitudeTrail(reading.gaugeId, attitudeAnimationCurrent, now)
+        if (
+            kotlin.math.abs(attitudeAnimationCurrent - attitudeAnimationTarget) > 0.05f ||
+            attitudeTrailSamples.size > 1
+        ) postInvalidateOnAnimation()
+        return attitudeAnimationCurrent
+    }
+
+    private fun recordAttitudeTrail(gaugeId: String, angle: Float, nowNanos: Long) {
+        while (attitudeTrailSamples.isNotEmpty() && nowNanos - attitudeTrailSamples.first.timestampNanos > ATTITUDE_TRAIL_DURATION_NANOS) {
+            attitudeTrailSamples.removeFirst()
+        }
+        val last = attitudeTrailSamples.peekLast()
+        if (last == null || last.gaugeId != gaugeId || kotlin.math.abs(last.angle - angle) >= ATTITUDE_TRAIL_STEP_DEGREES) {
+            attitudeTrailSamples.addLast(AttitudeTrailSample(gaugeId, angle, nowNanos))
+        }
+        while (attitudeTrailSamples.size > ATTITUDE_TRAIL_MAX_SAMPLES) attitudeTrailSamples.removeFirst()
+    }
+
+    private fun updateAttitudeAnimation(nowNanos: Long) {
+        val elapsedMs = (nowNanos - attitudeAnimationStartedNanos).coerceAtLeast(0L) / 1_000_000f
+        val fraction = (elapsedMs / ATTITUDE_TRANSITION_MS).coerceIn(0f, 1f)
+        val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
+        attitudeAnimationCurrent = attitudeAnimationStart + (attitudeAnimationTarget - attitudeAnimationStart) * eased
+        if (fraction >= 1f) attitudeAnimationCurrent = attitudeAnimationTarget
+    }
+
+    private fun drawVehicleAttitudeLine(canvas: Canvas, cx: Float, cy: Float, tilt: Float, gaugeId: String) {
+        val now = System.nanoTime()
+        val history = attitudeTrailSamples.filter { it.gaugeId == gaugeId }.dropLast(1)
+        history.forEach { sample ->
+            val age = (now - sample.timestampNanos).coerceAtLeast(0L)
+            val remaining = (1f - age.toFloat() / ATTITUDE_TRAIL_DURATION_NANOS.toFloat()).coerceIn(0f, 1f)
+            if (remaining > 0f) {
+                canvas.save()
+                canvas.rotate(sample.angle, cx, cy)
+                paint.shader = null
+                paint.style = Paint.Style.STROKE
+                paint.strokeCap = Paint.Cap.BUTT
+                paint.strokeWidth = 2.5f
+                paint.color = Color.argb(
+                    (remaining * 125f).toInt(),
+                    Color.red(palette.accent),
+                    Color.green(palette.accent),
+                    Color.blue(palette.accent),
+                )
+                canvas.drawLine(cx - 166f, cy, cx + 166f, cy, paint)
+                canvas.restore()
+            }
+        }
+
+        canvas.save()
+        canvas.rotate(tilt, cx, cy)
         paint.shader = null
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.BUTT
         paint.color = Color.argb(210, 0, 0, 0)
-        paint.strokeWidth = 6f
-        canvas.drawLine(cx - 166f, cy, cx + 166f, cy, paint)
-        paint.color = Color.argb(225, 255, 255, 255)
-        paint.strokeWidth = 2f
+        paint.strokeWidth = 7f
         canvas.drawLine(cx - 166f, cy, cx + 166f, cy, paint)
         paint.color = palette.accent
-        paint.strokeWidth = 4f
-        canvas.drawLine(cx - 12f, cy, cx + 12f, cy, paint)
-        paint.strokeWidth = 2f
-        canvas.drawLine(cx - 166f, cy - 8f, cx - 166f, cy + 8f, paint)
-        canvas.drawLine(cx + 166f, cy - 8f, cx + 166f, cy + 8f, paint)
+        paint.strokeWidth = 3f
+        canvas.drawLine(cx - 166f, cy, cx + 166f, cy, paint)
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.color = palette.accent
+        canvas.drawCircle(cx, cy, 4f, paint)
+        canvas.restore()
     }
 
     private fun drawOuterScaleRing(canvas: Canvas, spec: GaugeScaleSpec) {
@@ -1557,6 +1638,10 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     companion object {
+        private const val ATTITUDE_TRANSITION_MS = 280f
+        private const val ATTITUDE_TRAIL_DURATION_NANOS = 900_000_000L
+        private const val ATTITUDE_TRAIL_STEP_DEGREES = 1.25f
+        private const val ATTITUDE_TRAIL_MAX_SAMPLES = 12
         private const val DESIGN_WIDTH = 1280f
         private const val DESIGN_HEIGHT = 592f
     }
