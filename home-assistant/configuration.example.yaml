@@ -1,4 +1,6 @@
 gmode_trip_recorder:
+  # Keep false when the GMODE Android app is the authoritative trip recorder.
+  automatic_tracking: false
   tracking_entity: device_tracker.your_phone
   osrm_url: "http://OSRM_LAN_IP:5000"
   state_file: gmode_trip_recorder.json

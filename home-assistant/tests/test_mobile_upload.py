@@ -61,9 +61,25 @@ class FakeConfig:
 class FakeHass:
     def __init__(self, root: Path) -> None:
         self.config = FakeConfig(root)
+        self.states = FakeStates()
 
     async def async_add_executor_job(self, function):
         return await asyncio.to_thread(function)
+
+
+class FakeState:
+    def __init__(self, state: str = "not_home") -> None:
+        self.state = state
+        self.attributes = {"latitude": 45.05, "longitude": -79.10}
+        self.last_updated = None
+
+
+class FakeStates:
+    def __init__(self) -> None:
+        self.values = {"device_tracker.phone": FakeState()}
+
+    def get(self, entity_id: str):
+        return self.values.get(entity_id)
 
 
 def payload(status: str = "active") -> dict:
@@ -143,6 +159,25 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         invalid["points"][0]["latitude"] = 120
         with self.assertRaisesRegex(component.TripRecorderError, "point.latitude"):
             await self.recorder.import_mobile_trip(invalid)
+
+    async def test_snapshot_is_read_only_when_automatic_tracking_is_disabled(self) -> None:
+        recorder = component.TripRecorder(FakeHass(self.root), {"automatic_tracking": False})
+        state_file = self.root / "gmode_trip_recorder.json"
+        original = {
+            "version": 1,
+            "updated_at": "2026-08-21T12:00:00+00:00",
+            "active_trip_id": None,
+            "last_location": "away",
+            "trips": [],
+        }
+        state_file.write_text(json.dumps(original, indent=2), encoding="utf-8")
+
+        snapshot = await recorder.update_trip_recorder_snapshot()
+
+        self.assertEqual("ok", snapshot["status"])
+        self.assertFalse(snapshot["automatic_tracking"])
+        self.assertEqual("mobile_upload", snapshot["tracking_mode"])
+        self.assertEqual(original, json.loads(state_file.read_text(encoding="utf-8")))
 
 
 if __name__ == "__main__":

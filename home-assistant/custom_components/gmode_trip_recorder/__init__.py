@@ -154,6 +154,7 @@ class TripRecorder:
     def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
         self.hass = hass
         self.tracking_entity = str(config.get("tracking_entity", DEFAULT_TRACKING_ENTITY))
+        self.automatic_tracking = bool(config.get("automatic_tracking", True))
         self.osrm_base_url = str(config.get("osrm_url", DEFAULT_OSRM_URL)).rstrip("/")
         self.state_path = Path(hass.config.path(str(config.get("state_file", DEFAULT_STATE_FILE))))
         self.location_fresh_ms = LOCATION_FRESH_MINUTES * 60 * 1000
@@ -265,7 +266,7 @@ class TripRecorder:
     async def _update_trip_recorder_snapshot_locked(self) -> dict[str, Any]:
         now = utc_now()
         phone = self.hass.states.get(self.tracking_entity)
-        if phone is None:
+        if self.automatic_tracking and phone is None:
             return {
                 "status": "error",
                 "updated_at": now.isoformat(),
@@ -273,52 +274,53 @@ class TripRecorder:
             }
 
         recorder = await self.read_trip_recorder()
-        point = make_trip_point(phone, now)
-        is_home = is_home_state(phone)
         previous_location = recorder.get("last_location") or "unknown"
+        is_home = is_home_state(phone) if phone is not None else previous_location == "home"
         recorder["trips"] = recorder.get("trips") if isinstance(recorder.get("trips"), list) else []
-        road_cache: dict[str, float | None] = {}
 
-        if not is_home:
-            trip = next((item for item in recorder["trips"] if item.get("id") == recorder.get("active_trip_id")), None)
-            if trip is None and should_start_away_trip(recorder, point, previous_location):
-                trip = {
-                    "id": f"trip-{format_trip_id(now)}",
-                    "title": f"Trip {format_trip_title(now)}",
-                    "mode": "motor_vehicle",
-                    "trip_type": "street",
-                    "trip_type_source": "auto",
-                    "status": "active",
-                    "start_at": now.isoformat(),
-                    "end_at": None,
-                    "points": [],
-                }
-                recorder["trips"].append(trip)
-                recorder["active_trip_id"] = trip["id"]
-            if trip is not None:
-                append_trip_point(trip, point)
-                await self.update_trip_auto_classification(trip, road_cache)
-                arrival_point = None
-                if not await self.should_hold_off_road_trip_open(trip, road_cache):
-                    arrival_point = get_away_arrival_point(trip)
-                if arrival_point is not None:
+        if self.automatic_tracking:
+            point = make_trip_point(phone, now)
+            road_cache: dict[str, float | None] = {}
+            if not is_home:
+                trip = next((item for item in recorder["trips"] if item.get("id") == recorder.get("active_trip_id")), None)
+                if trip is None and should_start_away_trip(recorder, point, previous_location):
+                    trip = {
+                        "id": f"trip-{format_trip_id(now)}",
+                        "title": f"Trip {format_trip_title(now)}",
+                        "mode": "motor_vehicle",
+                        "trip_type": "street",
+                        "trip_type_source": "auto",
+                        "status": "active",
+                        "start_at": now.isoformat(),
+                        "end_at": None,
+                        "points": [],
+                    }
+                    recorder["trips"].append(trip)
+                    recorder["active_trip_id"] = trip["id"]
+                if trip is not None:
+                    append_trip_point(trip, point)
+                    await self.update_trip_auto_classification(trip, road_cache)
+                    arrival_point = None
+                    if not await self.should_hold_off_road_trip_open(trip, road_cache):
+                        arrival_point = get_away_arrival_point(trip)
+                    if arrival_point is not None:
+                        trip["status"] = "complete"
+                        trip["end_at"] = arrival_point.get("at")
+                        trip["completed_reason"] = "stationary_away"
+                        recorder["active_trip_id"] = None
+            elif recorder.get("active_trip_id"):
+                trip = next((item for item in recorder["trips"] if item.get("id") == recorder.get("active_trip_id")), None)
+                if trip is not None:
+                    append_trip_point(trip, point)
                     trip["status"] = "complete"
-                    trip["end_at"] = arrival_point.get("at")
-                    trip["completed_reason"] = "stationary_away"
-                    recorder["active_trip_id"] = None
-        elif recorder.get("active_trip_id"):
-            trip = next((item for item in recorder["trips"] if item.get("id") == recorder.get("active_trip_id")), None)
-            if trip is not None:
-                append_trip_point(trip, point)
-                trip["status"] = "complete"
-                trip["end_at"] = now.isoformat()
-            recorder["active_trip_id"] = None
+                    trip["end_at"] = now.isoformat()
+                recorder["active_trip_id"] = None
 
-        recorder["last_location"] = "home" if is_home else "away"
-        recorder["updated_at"] = now.isoformat()
-        recorder["trips"] = trim_trip_history(recorder["trips"])
-        await self.update_trip_auto_classifications(recorder["trips"], road_cache)
-        await self.write_trip_recorder(recorder)
+            recorder["last_location"] = "home" if is_home else "away"
+            recorder["updated_at"] = now.isoformat()
+            recorder["trips"] = trim_trip_history(recorder["trips"])
+            await self.update_trip_auto_classifications(recorder["trips"], road_cache)
+            await self.write_trip_recorder(recorder)
 
         visible_trips = [trip for trip in recorder["trips"] if not trip.get("hidden")]
         trips = visible_trips
@@ -335,6 +337,8 @@ class TripRecorder:
             "status": "ok",
             "updated_at": recorder["updated_at"],
             "tracking_entity": self.tracking_entity,
+            "automatic_tracking": self.automatic_tracking,
+            "tracking_mode": "home_assistant" if self.automatic_tracking else "mobile_upload",
             "mode": "motor_vehicle",
             "home_state": "home" if is_home else "away",
             "previous_location": previous_location,

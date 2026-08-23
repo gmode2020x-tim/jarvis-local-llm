@@ -23,6 +23,8 @@ Extended point fields include:
 
 Existing map consumers continue to use `lat`, `lon`, `altitude`, `accuracy`, `vertical_accuracy`, `speed`, and `at`.
 
+Set `automatic_tracking: false` when the Android app is the authoritative trip recorder. The snapshot and map APIs remain available, and authenticated Android uploads continue normally, but refreshing the Home Assistant dashboard no longer creates or extends trips from `tracking_entity`. Historical trips remain in the state file.
+
 Private entity IDs, LAN addresses, and route coordinates are configuration only; the component contains no household-specific defaults. Start from [`configuration.example.yaml`](configuration.example.yaml). `route_places` controls friendly route grouping, and `off_road_reference_place` optionally supplies a local area used by slow-trip auto-classification.
 
 ## Deploy
