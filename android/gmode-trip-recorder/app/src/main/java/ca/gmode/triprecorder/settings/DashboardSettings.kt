@@ -25,34 +25,42 @@ data class DashboardConfig(
     val pitchOffsetDegrees: Double = 0.0,
     val rollOffsetDegrees: Double = 0.0,
     val vehicleViewModeId: String = DashboardSettings.DEFAULT_VIEW_MODE_ID,
+    val attitudeCautionDegrees: Double = DashboardSettings.DEFAULT_ATTITUDE_CAUTION_DEGREES,
+    val attitudeLimitDegrees: Double = DashboardSettings.DEFAULT_ATTITUDE_LIMIT_DEGREES,
 ) {
     fun normalized(): DashboardConfig {
-        val offRoadVehicle = DashboardSettings.normalizeVehicleId(vehicleId, "off_road")
-        val streetVehicle = DashboardSettings.normalizeVehicleId(streetVehicleId, "street")
-        val snowVehicle = DashboardSettings.normalizeVehicleId(snowVehicleId, "snow")
-        val waterVehicle = DashboardSettings.normalizeVehicleId(waterVehicleId, "water")
+        val scene = offRoadSceneId.takeIf { id -> DashboardSettings.OFF_ROAD_SCENES.any { it.id == id } }
+            ?: DashboardSettings.DEFAULT_OFF_ROAD_SCENE_ID
         val known = DashboardSettings.GAUGES.mapTo(mutableSetOf()) { it.id }
-        val ordered = gaugeIds.filter { it in known }.distinct()
+        val ordered = gaugeIds
+            .map { if (it == "pitch" || it == "roll") "attitude" else it }
+            .filter { it in known }
+            .distinct()
+        val caution = attitudeCautionDegrees.takeIf { it.isFinite() }?.coerceIn(5.0, 40.0)
+            ?: DashboardSettings.DEFAULT_ATTITUDE_CAUTION_DEGREES
+        val limit = attitudeLimitDegrees.takeIf { it.isFinite() }?.coerceIn(caution + 5.0, 60.0)
+            ?: maxOf(DashboardSettings.DEFAULT_ATTITUDE_LIMIT_DEGREES, caution + 5.0)
         return copy(
-            vehicleId = offRoadVehicle,
-            streetVehicleId = streetVehicle,
-            snowVehicleId = snowVehicle,
-            waterVehicleId = waterVehicle,
-            offRoadSceneId = offRoadSceneId.takeIf { id -> DashboardSettings.OFF_ROAD_SCENES.any { it.id == id } }
-                ?: DashboardSettings.DEFAULT_OFF_ROAD_SCENE_ID,
-            gaugeIds = ordered.ifEmpty { DashboardSettings.defaultGauges(offRoadVehicle) },
+            vehicleId = if (scene == "sand") "sand_rail" else DashboardSettings.DEFAULT_VEHICLE_ID,
+            streetVehicleId = DashboardSettings.DEFAULT_STREET_VEHICLE_ID,
+            snowVehicleId = DashboardSettings.DEFAULT_SNOW_VEHICLE_ID,
+            waterVehicleId = DashboardSettings.DEFAULT_WATER_VEHICLE_ID,
+            offRoadSceneId = scene,
+            gaugeIds = ordered.ifEmpty { DashboardSettings.defaultGauges(DashboardSettings.DEFAULT_VEHICLE_ID) },
             pitchOffsetDegrees = pitchOffsetDegrees.takeIf { it.isFinite() }?.coerceIn(-180.0, 180.0) ?: 0.0,
             rollOffsetDegrees = rollOffsetDegrees.takeIf { it.isFinite() }?.coerceIn(-180.0, 180.0) ?: 0.0,
             vehicleViewModeId = vehicleViewModeId.takeIf { id -> DashboardSettings.VIEW_MODES.any { it.id == id } }
                 ?: DashboardSettings.DEFAULT_VIEW_MODE_ID,
+            attitudeCautionDegrees = caution,
+            attitudeLimitDegrees = limit,
         )
     }
 
     fun vehicleIdForTripType(tripType: String): String = when (DashboardSettings.normalizeTripType(tripType)) {
-        "street" -> streetVehicleId
-        "snow" -> snowVehicleId
-        "water" -> waterVehicleId
-        else -> vehicleId
+        "street" -> DashboardSettings.DEFAULT_STREET_VEHICLE_ID
+        "snow" -> DashboardSettings.DEFAULT_SNOW_VEHICLE_ID
+        "water" -> DashboardSettings.DEFAULT_WATER_VEHICLE_ID
+        else -> if (offRoadSceneId == "sand") "sand_rail" else DashboardSettings.DEFAULT_VEHICLE_ID
     }
 }
 
@@ -77,6 +85,10 @@ class DashboardSettings(context: Context) {
             pitchOffsetDegrees = preferences.getString(KEY_PITCH_OFFSET, null)?.toDoubleOrNull() ?: 0.0,
             rollOffsetDegrees = preferences.getString(KEY_ROLL_OFFSET, null)?.toDoubleOrNull() ?: 0.0,
             vehicleViewModeId = preferences.getString(KEY_VEHICLE_VIEW_MODE, DEFAULT_VIEW_MODE_ID) ?: DEFAULT_VIEW_MODE_ID,
+            attitudeCautionDegrees = preferences.getString(KEY_ATTITUDE_CAUTION, null)?.toDoubleOrNull()
+                ?: DEFAULT_ATTITUDE_CAUTION_DEGREES,
+            attitudeLimitDegrees = preferences.getString(KEY_ATTITUDE_LIMIT, null)?.toDoubleOrNull()
+                ?: DEFAULT_ATTITUDE_LIMIT_DEGREES,
         ).normalized()
     }
 
@@ -93,17 +105,21 @@ class DashboardSettings(context: Context) {
             .putString(KEY_PITCH_OFFSET, normalized.pitchOffsetDegrees.toString())
             .putString(KEY_ROLL_OFFSET, normalized.rollOffsetDegrees.toString())
             .putString(KEY_VEHICLE_VIEW_MODE, normalized.vehicleViewModeId)
+            .putString(KEY_ATTITUDE_CAUTION, normalized.attitudeCautionDegrees.toString())
+            .putString(KEY_ATTITUDE_LIMIT, normalized.attitudeLimitDegrees.toString())
             .remove(LEGACY_KEY_ROLL_VIEW)
             .apply()
     }
 
     companion object {
         const val DEFAULT_VEHICLE_ID = "sxs"
-        const val DEFAULT_STREET_VEHICLE_ID = "car"
+        const val DEFAULT_STREET_VEHICLE_ID = "truck"
         const val DEFAULT_SNOW_VEHICLE_ID = "snowmobile"
-        const val DEFAULT_WATER_VEHICLE_ID = "boat"
+        const val DEFAULT_WATER_VEHICLE_ID = "mini_jet_boat"
         const val DEFAULT_OFF_ROAD_SCENE_ID = "dirt"
         const val DEFAULT_VIEW_MODE_ID = "auto"
+        const val DEFAULT_ATTITUDE_CAUTION_DEGREES = 15.0
+        const val DEFAULT_ATTITUDE_LIMIT_DEGREES = 30.0
         const val AUTOMATIC_ROLL_VIEW_ID = "rear"
         val VEHICLE_ID_ALIASES = mapOf(
             "atv_utv" to "sxs",
@@ -113,26 +129,11 @@ class DashboardSettings(context: Context) {
         val TRIP_TYPES = listOf("street", "off_road", "snow", "water")
 
         val VEHICLES = listOf(
-            VehicleProfile("dirt_bike", "Dirt bike", setOf("off_road")),
-            VehicleProfile("sxs", "SxS / side-by-side", setOf("off_road")),
-            VehicleProfile("quad", "Quad ATV", setOf("off_road")),
-            VehicleProfile("three_wheeler", "Three-wheeler", setOf("off_road")),
+            VehicleProfile("sxs", "SxS", setOf("off_road")),
             VehicleProfile("sand_rail", "Sand rail", setOf("off_road")),
-            VehicleProfile("trophy_truck", "Trophy truck", setOf("off_road")),
-            VehicleProfile("unicycle", "Extreme unicycle — funny", setOf("off_road"), funny = true),
-            VehicleProfile("truck", "Truck / 4x4", setOf("street", "off_road")),
-            VehicleProfile("car", "Car", setOf("street")),
-            VehicleProfile("street_motorcycle", "Street motorcycle", setOf("street")),
-            VehicleProfile("clown_car", "Clown car — funny", setOf("street"), funny = true),
-            VehicleProfile("snowmobile", "Snowmobile", setOf("snow")),
-            VehicleProfile("snow_bike", "Snow bike", setOf("snow")),
-            VehicleProfile("snowcat", "Snowcat", setOf("snow")),
-            VehicleProfile("tracked_utv", "Tracked SxS", setOf("snow")),
-            VehicleProfile("boat", "Boat", setOf("water")),
-            VehicleProfile("seadoo", "Sea-Doo / personal watercraft", setOf("water")),
-            VehicleProfile("hovercraft", "Hovercraft", setOf("water")),
-            VehicleProfile("kayak", "Kayak", setOf("water")),
+            VehicleProfile("truck", "Truck", setOf("street")),
             VehicleProfile("mini_jet_boat", "Mini jet boat", setOf("water")),
+            VehicleProfile("snowmobile", "Snowmobile", setOf("snow")),
         )
 
         val OFF_ROAD_SCENES = listOf(
@@ -141,10 +142,9 @@ class DashboardSettings(context: Context) {
         )
 
         val VIEW_MODES = listOf(
-            VehicleViewOption("auto", "Automatic — phone sensors"),
-            VehicleViewOption("side", "Always side"),
-            VehicleViewOption("front", "Always front"),
-            VehicleViewOption("rear", "Always rear"),
+            VehicleViewOption("auto", "Chase — touch orbit, then return"),
+            VehicleViewOption("free", "Free orbit — keep selected view"),
+            VehicleViewOption("rear", "Locked high rear"),
         )
 
         val FIXED_VIEW_IDS = setOf("side", "front", "rear")
@@ -156,8 +156,7 @@ class DashboardSettings(context: Context) {
             GaugeDefinition("altitude", "GPS altitude"),
             GaugeDefinition("elevation_gain", "Elevation gain"),
             GaugeDefinition("compass", "GPS course"),
-            GaugeDefinition("pitch", "Pitch"),
-            GaugeDefinition("roll", "Roll"),
+            GaugeDefinition("attitude", "3D pitch + roll"),
             GaugeDefinition("g_force", "Shock peak"),
             GaugeDefinition("battery", "Phone battery"),
             GaugeDefinition("gps_satellites", "GPS satellites"),
@@ -166,20 +165,14 @@ class DashboardSettings(context: Context) {
             GaugeDefinition("pressure", "Station pressure"),
         )
 
-        fun defaultGauges(vehicleId: String): List<String> = when (vehicleId) {
-            "boat", "seadoo", "hovercraft", "kayak", "mini_jet_boat" -> listOf("speed", "compass")
-            "snowmobile", "snowcat", "tracked_utv" -> listOf("speed", "compass")
-            "dirt_bike", "street_motorcycle", "snow_bike" -> listOf("speed", "roll")
-            "car", "truck", "clown_car", "sand_rail", "trophy_truck" -> listOf("speed", "compass")
-            else -> listOf("pitch", "roll")
-        }
+        fun defaultGauges(vehicleId: String): List<String> = listOf("attitude", "speed", "compass")
 
         fun defaultTripType(vehicleId: String): String = when (
             VEHICLE_ID_ALIASES[vehicleId] ?: vehicleId
         ) {
-            "car", "street_motorcycle", "clown_car" -> "street"
-            "snowmobile", "snow_bike", "snowcat", "tracked_utv" -> "snow"
-            "boat", "seadoo", "hovercraft", "kayak", "mini_jet_boat" -> "water"
+            "truck" -> "street"
+            "snowmobile" -> "snow"
+            "mini_jet_boat" -> "water"
             else -> "off_road"
         }
 
@@ -216,12 +209,7 @@ class DashboardSettings(context: Context) {
             pitchDegrees: Double?,
             rollDegrees: Double?,
         ): String {
-            if (modeId in FIXED_VIEW_IDS) return modeId
-            if (gaugeTitle.equals("pitch", ignoreCase = true)) return "side"
-            if (gaugeTitle.equals("roll", ignoreCase = true)) return AUTOMATIC_ROLL_VIEW_ID
-            val pitch = kotlin.math.abs(pitchDegrees ?: 0.0)
-            val roll = kotlin.math.abs(rollDegrees ?: 0.0)
-            return if (roll > pitch + 2.0) AUTOMATIC_ROLL_VIEW_ID else "side"
+            return "rear"
         }
 
         private const val PREFS = "dashboard_settings"
@@ -235,6 +223,8 @@ class DashboardSettings(context: Context) {
         private const val KEY_PITCH_OFFSET = "pitch_offset_degrees"
         private const val KEY_ROLL_OFFSET = "roll_offset_degrees"
         private const val KEY_VEHICLE_VIEW_MODE = "vehicle_view_mode"
+        private const val KEY_ATTITUDE_CAUTION = "attitude_caution_degrees"
+        private const val KEY_ATTITUDE_LIMIT = "attitude_limit_degrees"
         private const val LEGACY_KEY_ROLL_VIEW = "roll_vehicle_view"
     }
 }

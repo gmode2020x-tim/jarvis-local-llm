@@ -12,7 +12,7 @@ class DashboardSettingsTest {
             gaugeIds = listOf("compass", "speed", "compass", "unknown", "battery"),
         ).normalized()
 
-        assertEquals("boat", config.waterVehicleId)
+        assertEquals("mini_jet_boat", config.waterVehicleId)
         assertEquals(listOf("compass", "speed", "battery"), config.gaugeIds)
     }
 
@@ -22,8 +22,7 @@ class DashboardSettingsTest {
 
         assertEquals(DashboardSettings.DEFAULT_VEHICLE_ID, config.vehicleId)
         assertEquals(DashboardSettings.defaultGauges(DashboardSettings.DEFAULT_VEHICLE_ID), config.gaugeIds)
-        assertTrue("pitch" in config.gaugeIds)
-        assertTrue("roll" in config.gaugeIds)
+        assertTrue("attitude" in config.gaugeIds)
     }
 
     @Test
@@ -47,19 +46,17 @@ class DashboardSettingsTest {
     }
 
     @Test
-    fun legacyVehicleIdsMigrateToGeneratedCategories() {
+    fun legacyVehicleIdsMigrateToTheSceneVehicle() {
         assertEquals("sxs", DashboardConfig(vehicleId = "atv_utv").normalized().vehicleId)
-        assertEquals("dirt_bike", DashboardConfig(vehicleId = "motorcycle").normalized().vehicleId)
+        assertEquals("sxs", DashboardConfig(vehicleId = "motorcycle").normalized().vehicleId)
     }
 
     @Test
-    fun everyTripCategoryOffersAtLeastFourVehiclesAndOneFunnyChoiceExists() {
-        DashboardSettings.TRIP_TYPES.forEach { tripType ->
-            assertTrue("$tripType needs at least four vehicles", DashboardSettings.vehiclesForTripType(tripType).size >= 4)
-        }
-        assertTrue(DashboardSettings.VEHICLES.any { it.funny })
-        assertTrue(DashboardSettings.vehiclesForTripType("off_road").size >= 8)
-        assertTrue(DashboardSettings.vehiclesForTripType("water").size >= 5)
+    fun catalogIsLimitedToTheFiveSceneVehicles() {
+        assertEquals(
+            setOf("sxs", "sand_rail", "truck", "mini_jet_boat", "snowmobile"),
+            DashboardSettings.VEHICLES.map { it.id }.toSet(),
+        )
     }
 
     @Test
@@ -74,7 +71,7 @@ class DashboardSettingsTest {
         assertEquals("mini_jet_boat", config.waterVehicleId)
         assertEquals("sand", config.offRoadSceneId)
         assertEquals("dirt", DashboardConfig(offRoadSceneId = "moon").normalized().offRoadSceneId)
-        assertTrue(DashboardSettings.vehicle("unicycle").funny)
+        assertEquals("sand_rail", config.vehicleIdForTripType("off road"))
     }
 
     @Test
@@ -86,10 +83,10 @@ class DashboardSettingsTest {
             waterVehicleId = "hovercraft",
         ).normalized()
 
-        assertEquals("quad", config.vehicleIdForTripType("off road"))
-        assertEquals("clown_car", config.vehicleIdForTripType("street"))
-        assertEquals("tracked_utv", config.vehicleIdForTripType("snow"))
-        assertEquals("hovercraft", config.vehicleIdForTripType("water"))
+        assertEquals("sxs", config.vehicleIdForTripType("off road"))
+        assertEquals("truck", config.vehicleIdForTripType("street"))
+        assertEquals("snowmobile", config.vehicleIdForTripType("snow"))
+        assertEquals("mini_jet_boat", config.vehicleIdForTripType("water"))
     }
 
     @Test
@@ -108,15 +105,28 @@ class DashboardSettingsTest {
     }
 
     @Test
-    fun automaticVehicleViewUsesPhoneBackFacingForwardConvention() {
-        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Pitch", 14.0, 2.0))
+    fun allLegacyFlatViewsResolveToTheRearChaseStartingPoint() {
+        assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Pitch", 14.0, 2.0))
         assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Roll", 2.0, 14.0))
         assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Speed", 2.0, 14.0))
-        assertEquals("side", DashboardSettings.resolveVehicleView("auto", "Speed", 14.0, 2.0))
+        assertEquals("rear", DashboardSettings.resolveVehicleView("auto", "Speed", 14.0, 2.0))
     }
 
     @Test
     fun fixedVehicleViewOverridesSensors() {
-        assertEquals("front", DashboardSettings.resolveVehicleView("front", "Pitch", 30.0, 0.0))
+        assertEquals("rear", DashboardSettings.resolveVehicleView("front", "Pitch", 30.0, 0.0))
+    }
+
+    @Test
+    fun legacyPitchAndRollGaugesMergeIntoOneAttitudeGauge() {
+        val config = DashboardConfig(gaugeIds = listOf("speed", "pitch", "roll", "attitude")).normalized()
+        assertEquals(listOf("speed", "attitude"), config.gaugeIds)
+    }
+
+    @Test
+    fun warningLimitsAreOrderedAndBounded() {
+        val config = DashboardConfig(attitudeCautionDegrees = 44.0, attitudeLimitDegrees = 20.0).normalized()
+        assertEquals(40.0, config.attitudeCautionDegrees, 0.0)
+        assertEquals(45.0, config.attitudeLimitDegrees, 0.0)
     }
 }

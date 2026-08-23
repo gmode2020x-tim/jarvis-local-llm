@@ -19,6 +19,59 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityInstrumentedTest {
     @Test
+    fun zeroAttitude3DPreviewRendersInsideTheGauge() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.setState(
+            CockpitState(
+                vehicleId = "sxs",
+                pitchDegrees = 0.0,
+                rollDegrees = 0.0,
+                readings = listOf(CockpitReading("Attitude", "P +0°  R +0°", "", subtitle = "LIVE 3D", gaugeId = "attitude")),
+            ),
+        )
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+        cockpit.draw(android.graphics.Canvas(bitmap))
+        assertTrue(android.graphics.Color.alpha(bitmap.getPixel(640, 278)) > 0)
+        val output = java.io.File(context.getExternalFilesDir(null), "gmode-3d-attitude-preview.png")
+        output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+    }
+
+    @Test
+    fun allFiveSceneVehiclesRenderAcrossSafeAndLimitAttitudes() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        DashboardSettings.VEHICLES.forEach { vehicle ->
+            listOf(-35.0 to 28.0, 0.0 to 0.0, 32.0 to -38.0).forEach { (pitch, roll) ->
+                cockpit.setState(
+                    CockpitState(
+                        vehicleId = vehicle.id,
+                        pitchDegrees = pitch,
+                        rollDegrees = roll,
+                        readings = listOf(CockpitReading("Attitude", "", "", gaugeId = "attitude")),
+                    ),
+                )
+                cockpit.draw(canvas)
+                assertTrue("${vehicle.id} should render an opaque gauge centre", android.graphics.Color.alpha(bitmap.getPixel(640, 278)) > 0)
+            }
+        }
+        bitmap.recycle()
+    }
+
+    @Test
     fun referenceArtworkPiecesRetainExactDesignDimensions() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val expected = listOf(
@@ -37,60 +90,30 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun everyVehicleCategoryHasThreeTransparentGaugeViews() {
+    fun everySceneVehicleHasAProcedural3DModel() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val cockpit = LandscapeCockpitView(context)
-        val resources = DashboardSettings.VEHICLES.flatMap { vehicle ->
-            listOf("side", "front", "rear").map { view -> cockpit.vehicleResourceId(vehicle.id, view) }
-        }
-
-        assertEquals(DashboardSettings.VEHICLES.size * 3, resources.size)
-        assertEquals(resources.size, resources.toSet().size)
-        resources.forEach { resourceId ->
-            val bitmap = BitmapFactory.decodeResource(context.resources, resourceId)
-            assertEquals(512, bitmap.width)
-            assertEquals(512, bitmap.height)
-            assertTrue(bitmap.hasAlpha())
-            assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(0, 0)))
-        }
+        assertEquals(5, DashboardSettings.VEHICLES.size)
+        DashboardSettings.VEHICLES.forEach { assertTrue(cockpit.supports3DVehicle(it.id)) }
     }
 
     @Test
-    fun newVehicleViewsDoNotContainABakedCheckerboard() {
+    fun freeOrbitChangesThe3DCameraViewpoint() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val cockpit = LandscapeCockpitView(context)
-        val resources = listOf("sand_rail", "trophy_truck", "unicycle", "mini_jet_boat")
-            .flatMap { vehicleId ->
-                listOf("side", "front", "rear").map { view ->
-                    cockpit.vehicleResourceId(vehicleId, view)
-                }
-            }
-
-        resources.forEach { resourceId ->
-            val bitmap = BitmapFactory.decodeResource(context.resources, resourceId)
-            var transparentPixels = 0
-            var brightNeutralPixels = 0
-            for (y in 0 until bitmap.height) {
-                for (x in 0 until bitmap.width) {
-                    val color = bitmap.getPixel(x, y)
-                    if (android.graphics.Color.alpha(color) == 0) {
-                        transparentPixels++
-                    } else {
-                        val red = android.graphics.Color.red(color)
-                        val green = android.graphics.Color.green(color)
-                        val blue = android.graphics.Color.blue(color)
-                        val spread = maxOf(red, green, blue) - minOf(red, green, blue)
-                        if (minOf(red, green, blue) >= 210 && spread <= 24) {
-                            brightNeutralPixels++
-                        }
-                    }
-                }
-            }
-
-            val pixelCount = bitmap.width * bitmap.height
-            assertTrue(transparentPixels > pixelCount / 2)
-            assertTrue(brightNeutralPixels < pixelCount / 4)
-        }
+        cockpit.setState(CockpitState(vehicleViewModeId = "free", readings = listOf(CockpitReading("Attitude", "", "", gaugeId = "attitude"))))
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val before = cockpit.cameraSnapshot()
+        cockpit.onTouchEvent(android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, 640f, 278f, 0))
+        cockpit.onTouchEvent(android.view.MotionEvent.obtain(0, 20, android.view.MotionEvent.ACTION_MOVE, 710f, 245f, 0))
+        cockpit.onTouchEvent(android.view.MotionEvent.obtain(0, 30, android.view.MotionEvent.ACTION_UP, 710f, 245f, 0))
+        val after = cockpit.cameraSnapshot()
+        assertTrue(kotlin.math.abs(after.first - before.first) > 5f)
+        assertTrue(kotlin.math.abs(after.second - before.second) > 2f)
     }
 
     @Test
@@ -98,10 +121,9 @@ class MainActivityInstrumentedTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val expectedBackgrounds = listOf(
             Triple("OFF ROAD", "sxs", R.drawable.dial_offroad_landscape),
-            Triple("STREET", "car", R.drawable.dial_street_landscape),
+            Triple("STREET", "truck", R.drawable.dial_street_landscape),
             Triple("SNOW", "snowmobile", R.drawable.dial_snow_landscape),
-            Triple("WATER", "boat", R.drawable.dial_water_landscape),
-            Triple("WATER", "seadoo", R.drawable.dial_water_landscape),
+            Triple("WATER", "mini_jet_boat", R.drawable.dial_water_landscape),
             Triple("OFF ROAD", "sand_rail", R.drawable.dial_sand_landscape),
         )
         val expectedDimensions = 768 to 512
@@ -126,25 +148,10 @@ class MainActivityInstrumentedTest {
     @Test
     fun eachVehicleStartsWithItsMatchingSceneType() {
         val expectedTypes = mapOf(
-            "dirt_bike" to "off_road",
             "sxs" to "off_road",
-            "quad" to "off_road",
             "snowmobile" to "snow",
-            "three_wheeler" to "off_road",
-            "truck" to "off_road",
-            "car" to "street",
-            "street_motorcycle" to "street",
-            "clown_car" to "street",
-            "snow_bike" to "snow",
-            "snowcat" to "snow",
-            "tracked_utv" to "snow",
-            "boat" to "water",
-            "seadoo" to "water",
-            "hovercraft" to "water",
-            "kayak" to "water",
+            "truck" to "street",
             "sand_rail" to "off_road",
-            "trophy_truck" to "off_road",
-            "unicycle" to "off_road",
             "mini_jet_boat" to "water",
         )
 
@@ -181,18 +188,17 @@ class MainActivityInstrumentedTest {
                 cockpit.onAction?.invoke(CockpitAction.SETTINGS)
 
                 val labels = collectText(content)
-                assertTrue(labels.any { it.contains("back of the phone facing forward", ignoreCase = true) })
+                assertTrue(labels.any { it.contains("back facing forward", ignoreCase = true) })
                 assertTrue(labels.any { it == "CALIBRATE PITCH + ROLL ZERO" })
                 assertTrue(labels.any { it == "EXPORT RECORDED TRIP" })
                 assertTrue(labels.any { it == "EXPORT TRIP FILE" })
                 assertTrue(labels.any { it == "USE CURRENT WI-FI" })
                 assertTrue(labels.any { it == "CHOOSE WI-FI IN ANDROID" })
                 assertTrue(labels.any { it.contains("Hybrid mode uses both signals") })
-                assertTrue(labels.any { it == "STREET VEHICLE" })
-                assertTrue(labels.any { it == "OFF ROAD VEHICLE" })
                 assertTrue(labels.any { it == "OFF ROAD SCENE" })
-                assertTrue(labels.any { it == "SNOW VEHICLE" })
-                assertTrue(labels.any { it == "WATER VEHICLE" })
+                assertTrue(labels.any { it == "3D CAMERA" })
+                assertTrue(labels.any { it == "CAUTION START" })
+                assertTrue(labels.any { it == "LIMIT START" })
                 assertTrue(labels.none { it.contains("ROLL PERSPECTIVE") })
             }
         }
@@ -212,8 +218,8 @@ class MainActivityInstrumentedTest {
                     val cockpit = root.getChildAt(0) as LandscapeCockpitView
                     assertEquals(
                         listOf(
-                            "Speed", "Trip time", "Distance", "GPS altitude", "Elevation gain", "GPS course", "Pitch",
-                            "Roll", "Shock peak", "Phone battery", "GPS satellites", "GPS accuracy", "Coordinates", "Station pressure",
+                            "Speed", "Trip time", "Distance", "GPS altitude", "Elevation gain", "GPS course", "Attitude",
+                            "Shock peak", "Phone battery", "GPS satellites", "GPS accuracy", "Coordinates", "Station pressure",
                         ),
                         cockpit.activeGaugeTitles(),
                     )
@@ -258,8 +264,7 @@ class MainActivityInstrumentedTest {
             CockpitReading("GPS altitude", "543", "m", 0.58, "WGS84", gaugeId = "altitude", numericValue = 543.0),
             CockpitReading("Elevation gain", "386", "m", 0.77, "ASCENT", gaugeId = "elevation_gain", numericValue = 386.0),
             CockpitReading("GPS course", "NW", "315°", 315.0 / 360.0, "COURSE OVER GROUND", 315.0, "compass", 315.0),
-            CockpitReading("Pitch", "+12°", "", 0.63, "S24 ORIENTATION", 12.0, "pitch", 12.0),
-            CockpitReading("Roll", "-8°", "", 0.41, "S24 ORIENTATION", -8.0, "roll", -8.0),
+            CockpitReading("Attitude", "P +12°  R -8°", "", subtitle = "LIVE 3D", gaugeId = "attitude"),
             CockpitReading("Shock peak", "1.25", "g", 0.42, "LINEAR ACCELERATION", gaugeId = "g_force", numericValue = 1.25),
             CockpitReading("Phone battery", "74", "%", 0.74, "S24", gaugeId = "battery", numericValue = 74.0),
             CockpitReading("GPS satellites", "12", "used in fix", 0.4, "GNSS", gaugeId = "gps_satellites", numericValue = 12.0),
@@ -295,7 +300,8 @@ class MainActivityInstrumentedTest {
         fun render(angle: Double) {
             cockpit.setState(
                 CockpitState(
-                    readings = listOf(CockpitReading("Roll", "${angle.toInt()}°", "", angleDegrees = angle, gaugeId = "roll", numericValue = angle)),
+                    readings = listOf(CockpitReading("Attitude", "", "", gaugeId = "attitude")),
+                    rollDegrees = angle,
                 ),
             )
             cockpit.draw(canvas)
@@ -322,10 +328,6 @@ class MainActivityInstrumentedTest {
         val original = settings.read()
         settings.save(
             DashboardConfig(
-                vehicleId = "quad",
-                streetVehicleId = "clown_car",
-                snowVehicleId = "tracked_utv",
-                waterVehicleId = "hovercraft",
                 offRoadSceneId = "sand",
             ),
         )
@@ -342,10 +344,10 @@ class MainActivityInstrumentedTest {
                     android.os.SystemClock.sleep(1_200)
                 }
 
-                assertVehicleAndCycle("quad", R.drawable.dial_sand_landscape)
-                assertVehicleAndCycle("tracked_utv", R.drawable.dial_snow_landscape)
-                assertVehicleAndCycle("hovercraft", R.drawable.dial_water_landscape)
-                assertVehicleAndCycle("clown_car", R.drawable.dial_street_landscape)
+                assertVehicleAndCycle("sand_rail", R.drawable.dial_sand_landscape)
+                assertVehicleAndCycle("snowmobile", R.drawable.dial_snow_landscape)
+                assertVehicleAndCycle("mini_jet_boat", R.drawable.dial_water_landscape)
+                assertVehicleAndCycle("truck", R.drawable.dial_street_landscape)
             }
         } finally {
             settings.save(original)

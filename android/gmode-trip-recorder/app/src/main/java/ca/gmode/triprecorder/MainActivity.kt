@@ -227,6 +227,16 @@ class MainActivity : AppCompatActivity() {
         sideButtonConfig = sideButtonSettings.read()
         palette = appearanceSettings.palette()
         dashboardConfig = dashboardSettings.read()
+        calibrationSensors.onOrientationChanged = { orientation ->
+            if (::landscapeCockpit.isInitialized && !showingSettings) {
+                landscapeCockpit.setLiveAttitude(
+                    pitchDegrees = orientation.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) },
+                    rollDegrees = orientation.rollDegrees?.let {
+                        GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees)
+                    },
+                )
+            }
+        }
         quickTripType = "off_road"
         applySystemBarPalette()
         enterImmersiveMode()
@@ -274,6 +284,8 @@ class MainActivity : AppCompatActivity() {
                     readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
                     sideButtons = sideButtonConfig,
                     vehicleViewModeId = dashboardConfig.vehicleViewModeId,
+                    attitudeCautionDegrees = dashboardConfig.attitudeCautionDegrees,
+                    attitudeLimitDegrees = dashboardConfig.attitudeLimitDegrees,
                 ),
             )
             onAction = ::handleCockpitAction
@@ -779,6 +791,14 @@ class MainActivity : AppCompatActivity() {
             backgroundTintList = ColorStateList.valueOf(ORANGE)
             setSelection(DashboardSettings.VIEW_MODES.indexOfFirst { it.id == dashboardConfig.vehicleViewModeId }.coerceAtLeast(0))
         }
+        val attitudeCaution = editText("Caution angle in degrees").apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText("${dashboardConfig.attitudeCautionDegrees.toInt()}")
+        }
+        val attitudeLimit = editText("Limit angle in degrees").apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText("${dashboardConfig.attitudeLimitDegrees.toInt()}")
+        }
         val gaugeOrder = (
             dashboardConfig.gaugeIds + DashboardSettings.GAUGES.map { it.id }.filterNot { it in dashboardConfig.gaugeIds }
             ).toMutableList()
@@ -799,14 +819,12 @@ class MainActivity : AppCompatActivity() {
         content.addView(
             card(
                 "COCKPIT LAYOUT",
-                text("Choose the vehicle displayed for each trip type. Changing the trip type automatically switches both the scene and vehicle.", 11f, MUTED),
-                labeledInput("STREET VEHICLE", streetVehicleSpinner),
-                labeledInput("OFF ROAD VEHICLE", offRoadVehicleSpinner),
+                text("The 3D vehicle follows the scene: Street — Truck; Dirt — SxS; Sand — Sand rail; Snow — Snowmobile; Water — Mini jet boat.", 11f, MUTED),
                 labeledInput("OFF ROAD SCENE", offRoadSceneSpinner),
-                labeledInput("SNOW VEHICLE", snowVehicleSpinner),
-                labeledInput("WATER VEHICLE", waterVehicleSpinner),
-                labeledInput("VEHICLE VIEW", vehicleViewSpinner),
-                text("Mount the S24 in landscape with the back of the phone facing forward. Automatic view shows the vehicle side for pitch and rear for roll. Choose a fixed view to override it. Enable any number of gauges, arrange their order, and cycle through them with the cockpit arrows.", 11f, MUTED),
+                labeledInput("3D CAMERA", vehicleViewSpinner),
+                labeledInput("CAUTION START", attitudeCaution),
+                labeledInput("LIMIT START", attitudeLimit),
+                text("Mount the S24 in landscape with its back facing forward. Drag inside the gauge to orbit the real 3D vehicle. Chase mode returns smoothly to the high rear view; Free orbit keeps the selected view.", 11f, MUTED),
                 gaugeRows,
                 horizontalButtons(saveCockpit, vehicleDefaults),
                 text("LEVEL CALIBRATION: Park on flat ground, stop completely, leave the phone in its normal mount, then press the button and release the phone. Calibration is rejected if the S24 detects movement.", 11f, MUTED),
@@ -875,34 +893,33 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Choose at least one gauge", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-            val streetVehicle = streetVehicles[streetVehicleSpinner.selectedItemPosition]
-            val offRoadVehicle = offRoadVehicles[offRoadVehicleSpinner.selectedItemPosition]
-            val snowVehicle = snowVehicles[snowVehicleSpinner.selectedItemPosition]
-            val waterVehicle = waterVehicles[waterVehicleSpinner.selectedItemPosition]
+            val cautionDegrees = attitudeCaution.text.toString().toDoubleOrNull()
+            val limitDegrees = attitudeLimit.text.toString().toDoubleOrNull()
+            if (cautionDegrees == null || limitDegrees == null || cautionDegrees !in 5.0..40.0 || limitDegrees < cautionDegrees + 5.0 || limitDegrees > 60.0) {
+                Toast.makeText(this, "Use caution 5–40° and a limit at least 5° higher (maximum 60°)", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val selectedScene = DashboardSettings.OFF_ROAD_SCENES[offRoadSceneSpinner.selectedItemPosition].id
             dashboardSettings.save(
                 DashboardConfig(
-                    vehicleId = offRoadVehicle.id,
-                    streetVehicleId = streetVehicle.id,
-                    snowVehicleId = snowVehicle.id,
-                    waterVehicleId = waterVehicle.id,
-                    offRoadSceneId = DashboardSettings.OFF_ROAD_SCENES[offRoadSceneSpinner.selectedItemPosition].id,
+                    vehicleId = if (selectedScene == "sand") "sand_rail" else DashboardSettings.DEFAULT_VEHICLE_ID,
+                    streetVehicleId = DashboardSettings.DEFAULT_STREET_VEHICLE_ID,
+                    snowVehicleId = DashboardSettings.DEFAULT_SNOW_VEHICLE_ID,
+                    waterVehicleId = DashboardSettings.DEFAULT_WATER_VEHICLE_ID,
+                    offRoadSceneId = selectedScene,
                     gaugeIds = selected,
                     pitchOffsetDegrees = dashboardConfig.pitchOffsetDegrees,
                     rollOffsetDegrees = dashboardConfig.rollOffsetDegrees,
                     vehicleViewModeId = DashboardSettings.VIEW_MODES[vehicleViewSpinner.selectedItemPosition].id,
+                    attitudeCautionDegrees = cautionDegrees,
+                    attitudeLimitDegrees = limitDegrees,
                 ),
             )
             Toast.makeText(this, "Trip-type vehicle choices applied", Toast.LENGTH_SHORT).show()
             recreate()
         }
         vehicleDefaults.setOnClickListener {
-            val vehicle = when (DashboardSettings.normalizeTripType(quickTripType)) {
-                "street" -> streetVehicles[streetVehicleSpinner.selectedItemPosition]
-                "snow" -> snowVehicles[snowVehicleSpinner.selectedItemPosition]
-                "water" -> waterVehicles[waterVehicleSpinner.selectedItemPosition]
-                else -> offRoadVehicles[offRoadVehicleSpinner.selectedItemPosition]
-            }
-            val defaults = DashboardSettings.defaultGauges(vehicle.id)
+            val defaults = DashboardSettings.defaultGauges(DashboardSettings.DEFAULT_VEHICLE_ID)
             selectedGaugeIds.clear()
             selectedGaugeIds.addAll(defaults)
             gaugeOrder.clear()
@@ -1268,8 +1285,12 @@ class MainActivity : AppCompatActivity() {
                             readings = dashboardConfig.gaugeIds.map { readingFor(it, active, telemetry, duration) },
                             sideButtons = sideButtonConfig,
                             vehicleViewModeId = dashboardConfig.vehicleViewModeId,
-                            pitchDegrees = telemetry.pitchDegrees,
-                            rollDegrees = telemetry.rollDegrees,
+                            pitchDegrees = telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) },
+                            rollDegrees = telemetry.rollDegrees?.let {
+                                GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees)
+                            },
+                            attitudeCautionDegrees = dashboardConfig.attitudeCautionDegrees,
+                            attitudeLimitDegrees = dashboardConfig.attitudeLimitDegrees,
                         ),
                     )
                 }
@@ -1422,6 +1443,18 @@ class MainActivity : AppCompatActivity() {
             "compass" -> {
                 val value = telemetry.bearingDegrees.takeIf { liveForTrip }
                 reading(id, "GPS course", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value, if (value == null) unavailable else "COURSE OVER GROUND", value)
+            }
+            "attitude" -> {
+                val pitch = telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }
+                val roll = telemetry.rollDegrees?.let { GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees) }
+                CockpitReading(
+                    title = "Attitude",
+                    value = if (pitch == null || roll == null) "P --  R --" else "P ${"%+.0f°".format(pitch)}  R ${"%+.0f°".format(roll)}",
+                    unit = "",
+                    progress = null,
+                    subtitle = if (pitch == null || roll == null) unavailable else "LIVE 3D • DRAG TO ORBIT",
+                    gaugeId = id,
+                )
             }
             "pitch" -> angleReading(id, "Pitch", telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable, tripType)
             "roll" -> angleReading(

@@ -65,6 +65,8 @@ data class CockpitState(
     val vehicleViewModeId: String = DashboardSettings.DEFAULT_VIEW_MODE_ID,
     val pitchDegrees: Double? = null,
     val rollDegrees: Double? = null,
+    val attitudeCautionDegrees: Double = DashboardSettings.DEFAULT_ATTITUDE_CAUTION_DEGREES,
+    val attitudeLimitDegrees: Double = DashboardSettings.DEFAULT_ATTITUDE_LIMIT_DEGREES,
 )
 
 data class CornerIndicatorSnapshot(
@@ -112,6 +114,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val touchZones = linkedMapOf<CockpitAction, RectF>()
     private val activityIconCache = mutableMapOf<String, Bitmap?>()
     private val vehicleArtworkCache = mutableMapOf<String, VehicleArtwork>()
+    private val vehicle3DRenderer = Vehicle3DRenderer()
     private var palette = ca.gmode.triprecorder.settings.AppearanceSettings.PRESETS.first()
     private var state = CockpitState()
     private var contentScale = 1f
@@ -124,6 +127,15 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private var attitudeAnimationCurrent = 0f
     private var attitudeAnimationStartedNanos = 0L
     private val attitudeTrailSamples = java.util.ArrayDeque<AttitudeTrailSample>()
+    private var renderedPitch = 0f
+    private var renderedRoll = 0f
+    private var cameraYaw = 0f
+    private var cameraElevation = DEFAULT_CAMERA_ELEVATION
+    private var cameraDragActive = false
+    private var cameraDragged = false
+    private var cameraLastX = 0f
+    private var cameraLastY = 0f
+    private var cameraReturnActive = false
     private val previousGaugeZone = RectF()
     private val nextGaugeZone = RectF()
     var onAction: ((CockpitAction) -> Unit)? = null
@@ -142,10 +154,24 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     fun setState(value: CockpitState) {
         state = value
+        if (value.vehicleViewModeId == "rear") {
+            cameraYaw = 0f
+            cameraElevation = DEFAULT_CAMERA_ELEVATION
+            cameraReturnActive = false
+        }
         if (value.readings.isNotEmpty()) selectedGaugeIndex %= value.readings.size else selectedGaugeIndex = 0
         contentDescription = "${value.vehicleLabel} cockpit, ${value.tripLabel}, ${value.gpsLabel}, ${value.homeAssistantLabel}"
         invalidate()
     }
+
+    fun setLiveAttitude(pitchDegrees: Double?, rollDegrees: Double?) {
+        state = state.copy(pitchDegrees = pitchDegrees, rollDegrees = rollDegrees)
+        postInvalidateOnAnimation()
+    }
+
+    internal fun cameraSnapshot(): Pair<Float, Float> = cameraYaw to cameraElevation
+
+    internal fun supports3DVehicle(vehicleId: String): Boolean = vehicle3DRenderer.supports(vehicleId)
 
     internal fun activeGaugeTitles(): List<String> = state.readings.map { it.title }
 
@@ -228,14 +254,41 @@ class LandscapeCockpitView(context: Context) : View(context) {
             reading.value.length > 10 -> 28f
             else -> 38f
         }
-        drawReferenceText(canvas, reading.value, 640f, 402f, valueSize, palette.accent, true)
-        if (reading.unit.isNotBlank()) drawReferenceText(canvas, reading.unit, 640f, 426f, 13f, Color.LTGRAY, false)
+        if (reading.gaugeId == "attitude") {
+            drawAttitudeStatus(canvas)
+        } else {
+            drawReferenceText(canvas, reading.value, 640f, 402f, valueSize, palette.accent, true)
+            if (reading.unit.isNotBlank()) drawReferenceText(canvas, reading.unit, 640f, 426f, 13f, Color.LTGRAY, false)
+        }
         drawReferenceText(canvas, reading.title, 640f, 536f, 24f, Color.WHITE, true)
         val detail = if (reading.subtitle.isNotBlank()) reading.subtitle else state.tripLabel
         drawReferenceText(canvas, detail, 640f, 565f, 18f, palette.accent, true)
         drawConfiguredSideButtons(canvas)
         drawLiveCornerIndicators(canvas)
     }
+
+    private fun drawAttitudeStatus(canvas: Canvas) {
+        val pitch = state.pitchDegrees ?: 0.0
+        val roll = state.rollDegrees ?: 0.0
+        val worst = maxOf(kotlin.math.abs(pitch), kotlin.math.abs(roll))
+        val (label, color) = when {
+            worst >= state.attitudeLimitDegrees -> "LIMIT" to Color.parseColor("#E5091B")
+            worst >= state.attitudeCautionDegrees -> "CAUTION" to Color.parseColor("#FFB000")
+            else -> "STABLE" to Color.parseColor("#20B94B")
+        }
+        drawReferenceText(canvas, label, 640f, 392f, 20f, color, true)
+        drawReferenceText(
+            canvas,
+            "PITCH ${signedDegrees(pitch)}   ROLL ${signedDegrees(roll)}",
+            640f,
+            417f,
+            14f,
+            Color.WHITE,
+            true,
+        )
+    }
+
+    private fun signedDegrees(value: Double): String = "%+.0f°".format(value)
 
     private data class VehicleArtwork(val bitmap: Bitmap, val contentBounds: Rect)
     private data class AttitudeTrailSample(val gaugeId: String, val angle: Float, val timestampNanos: Long)
@@ -244,7 +297,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
         val cx = 640f
         val cy = 278f
         val spec = GaugeScaleCatalog.forGauge(reading.gaugeId, reading.numericValue, state.tripTypeLabel)
-        val sceneGauge = reading.gaugeId in setOf("speed", "distance", "altitude", "elevation_gain", "compass", "pitch", "roll")
+        val sceneGauge = reading.gaugeId in setOf("speed", "distance", "altitude", "elevation_gain", "compass", "attitude", "pitch", "roll")
+        val attitudeGauge = reading.gaugeId in setOf("attitude", "pitch", "roll")
         canvas.save()
         // Cover the complete inner aperture. The source dashboard center contains its original
         // mountain/UTV scene, so a smaller clip allows that baked-in image to show around the
@@ -252,33 +306,26 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.clipCircle(cx, cy, 174f)
         if (sceneGauge) {
             canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
-            val viewId = DashboardSettings.resolveVehicleView(
-                modeId = state.vehicleViewModeId,
-                gaugeTitle = reading.title,
-                pitchDegrees = state.pitchDegrees,
-                rollDegrees = state.rollDegrees,
-            )
-            val resourceId = vehicleResourceId(state.vehicleId, viewId)
-            val cacheKey = "${state.vehicleId}:$viewId"
-            val artwork = vehicleArtworkCache.getOrPut(cacheKey) {
-                val bitmap = BitmapFactory.decodeResource(resources, resourceId)
-                VehicleArtwork(bitmap, findOpaqueBounds(bitmap))
-            }
-            val bounds = artwork.contentBounds
-            val maxWidth = if (viewId == "side") 240f else 180f
-            val maxHeight = if (viewId == "side") 132f else 182f
-            val scale = min(maxWidth / bounds.width().coerceAtLeast(1), maxHeight / bounds.height().coerceAtLeast(1))
-            val targetWidth = bounds.width() * scale
-            val targetHeight = bounds.height() * scale
-            val targetCy = if (viewId == "side") 290f else 284f
-            val target = RectF(cx - targetWidth / 2f, targetCy - targetHeight / 2f, cx + targetWidth / 2f, targetCy + targetHeight / 2f)
-            val attitudeGauge = reading.gaugeId == "pitch" || reading.gaugeId == "roll"
-            val tilt = if (attitudeGauge) animatedAttitudeAngle(reading) else 0f
             if (attitudeGauge) {
-                drawVehicleAttitudeLine(canvas, cx, targetCy, tilt, reading.gaugeId)
-                canvas.rotate(tilt, cx, targetCy)
+                updateRenderedAttitude()
+                drawCombinedAttitudeBackdrop(canvas, cx, cy, renderedPitch, renderedRoll)
+            } else {
+                renderedPitch = approach(renderedPitch, (state.pitchDegrees ?: 0.0).toFloat(), 0.18f)
+                renderedRoll = approach(renderedRoll, (state.rollDegrees ?: 0.0).toFloat(), 0.18f)
             }
-            canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
+            updateCameraReturn()
+            vehicle3DRenderer.draw(
+                canvas = canvas,
+                centerX = cx,
+                centerY = cy,
+                apertureRadius = 174f,
+                vehicleId = state.vehicleId,
+                pitchDegrees = renderedPitch.coerceIn(-60f, 60f),
+                rollDegrees = renderedRoll.coerceIn(-60f, 60f),
+                cameraYawDegrees = cameraYaw,
+                cameraElevationDegrees = cameraElevation,
+                accentColor = palette.accent,
+            )
         } else {
             paint.style = Paint.Style.FILL
             paint.shader = RadialGradient(cx, cy, 174f, intArrayOf(Color.parseColor("#151515"), Color.parseColor("#050505"), Color.BLACK), null, Shader.TileMode.CLAMP)
@@ -286,6 +333,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
             paint.shader = null
         }
         canvas.restore()
+        if (attitudeGauge) {
+            drawCombinedAttitudeRing(canvas)
+            drawCombinedAttitudeLabels(canvas)
+            return
+        }
         drawOuterScaleRing(canvas, spec)
         when (spec.faceStyle) {
             GaugeFaceStyle.ATTITUDE_PITCH -> drawPitchGaugeMarks(canvas)
@@ -321,6 +373,139 @@ class LandscapeCockpitView(context: Context) : View(context) {
             attitudeTrailSamples.size > 1
         ) postInvalidateOnAnimation()
         return attitudeAnimationCurrent
+    }
+
+    private fun updateRenderedAttitude() {
+        val pitchTarget = (state.pitchDegrees ?: 0.0).toFloat().coerceIn(-60f, 60f)
+        val rollTarget = (state.rollDegrees ?: 0.0).toFloat().coerceIn(-60f, 60f)
+        renderedPitch = approach(renderedPitch, pitchTarget, ATTITUDE_FRAME_SMOOTHING)
+        renderedRoll = approach(renderedRoll, rollTarget, ATTITUDE_FRAME_SMOOTHING)
+        val now = System.nanoTime()
+        recordAttitudeTrail("attitude", renderedRoll, now)
+        if (kotlin.math.abs(renderedPitch - pitchTarget) > 0.05f || kotlin.math.abs(renderedRoll - rollTarget) > 0.05f) {
+            postInvalidateOnAnimation()
+        }
+    }
+
+    private fun approach(current: Float, target: Float, amount: Float): Float =
+        if (kotlin.math.abs(target - current) < 0.02f) target else current + (target - current) * amount
+
+    private fun updateCameraReturn() {
+        if (!cameraReturnActive || cameraDragActive || state.vehicleViewModeId != "auto") return
+        cameraYaw = approach(cameraYaw, 0f, CAMERA_RETURN_SMOOTHING)
+        cameraElevation = approach(cameraElevation, DEFAULT_CAMERA_ELEVATION, CAMERA_RETURN_SMOOTHING)
+        cameraReturnActive = kotlin.math.abs(cameraYaw) > 0.1f ||
+            kotlin.math.abs(cameraElevation - DEFAULT_CAMERA_ELEVATION) > 0.1f
+        if (cameraReturnActive) postInvalidateOnAnimation()
+    }
+
+    private fun drawCombinedAttitudeBackdrop(canvas: Canvas, cx: Float, cy: Float, pitch: Float, roll: Float) {
+        paint.shader = null
+        paint.strokeCap = Paint.Cap.BUTT
+
+        // Fixed pitch ladder: the vehicle rotates against it, so zero remains a stable reference.
+        listOf(-30, -15, 0, 15, 30).forEach { value ->
+            val y = cy - value / 30f * 86f
+            val halfWidth = if (value == 0) 122f else 76f
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = if (value == 0) 1.8f else 1.1f
+            paint.color = if (value == 0) Color.argb(185, 255, 255, 255) else Color.argb(125, 255, 255, 255)
+            canvas.drawLine(cx - halfWidth, y, cx + halfWidth, y, paint)
+            drawReferenceText(canvas, if (value > 0) "+$value°" else "$value°", cx + halfWidth + 25f, y + 5f, 11f, Color.WHITE, true)
+        }
+
+        // The small pitch cue slides on the fixed ladder while the mesh itself supplies the 3D cue.
+        val pitchY = cy - pitch.coerceIn(-45f, 45f) / 45f * 128f
+        paint.style = Paint.Style.FILL
+        paint.color = palette.accent
+        val pitchMarker = Path().apply {
+            moveTo(cx - 151f, pitchY)
+            lineTo(cx - 139f, pitchY - 7f)
+            lineTo(cx - 139f, pitchY + 7f)
+            close()
+        }
+        canvas.drawPath(pitchMarker, paint)
+
+        drawVehicleAttitudeLine(canvas, cx, cy, roll, "attitude")
+    }
+
+    private fun drawCombinedAttitudeRing(canvas: Canvas) {
+        val cx = 640f
+        val cy = 278f
+        val radius = 181f
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.BUTT
+        paint.color = Color.parseColor("#080808")
+        paint.strokeWidth = 34f
+        canvas.drawCircle(cx, cy, 188f, paint)
+        paint.color = Color.parseColor("#555555")
+        paint.strokeWidth = 2f
+        canvas.drawCircle(cx, cy, 206f, paint)
+        paint.color = Color.parseColor("#3D3D3D")
+        canvas.drawCircle(cx, cy, 170f, paint)
+
+        val caution = state.attitudeCautionDegrees.toFloat().coerceIn(5f, 40f)
+        val limit = state.attitudeLimitDegrees.toFloat().coerceIn(caution + 5f, 60f).coerceAtMost(45f)
+        listOf(0f, 180f).forEach { base ->
+            drawAttitudeZoneArc(canvas, cx, cy, radius, base - caution, caution * 2f, GaugeZoneRole.GOOD)
+            drawAttitudeZoneArc(canvas, cx, cy, radius, base - limit, limit - caution, GaugeZoneRole.CAUTION)
+            drawAttitudeZoneArc(canvas, cx, cy, radius, base + caution, limit - caution, GaugeZoneRole.CAUTION)
+            drawAttitudeZoneArc(canvas, cx, cy, radius, base - 45f, 45f - limit, GaugeZoneRole.DANGER)
+            drawAttitudeZoneArc(canvas, cx, cy, radius, base + limit, 45f - limit, GaugeZoneRole.DANGER)
+        }
+        var value = -45
+        while (value <= 45) {
+            val major = value % 15 == 0
+            drawOuterTick(canvas, cx, cy, 201f, value.toFloat(), major)
+            drawOuterTick(canvas, cx, cy, 201f, 180f + value, major)
+            value += 5
+        }
+    }
+
+    private fun drawAttitudeZoneArc(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        start: Float,
+        sweep: Float,
+        role: GaugeZoneRole,
+    ) {
+        if (sweep <= 0f) return
+        paint.color = gaugeZoneColor(role)
+        paint.strokeWidth = 7f
+        canvas.drawArc(RectF(cx - radius, cy - radius, cx + radius, cy + radius), start, sweep, false, paint)
+    }
+
+    private fun drawCombinedAttitudeLabels(canvas: Canvas) {
+        val cx = 640f
+        val cy = 278f
+        listOf(-45, -30, -15, 0, 15, 30, 45).forEach { value ->
+            val rightRadians = Math.toRadians(value.toDouble())
+            val leftRadians = Math.toRadians((180 + value).toDouble())
+            val rightLabel = if (value > 0) "+$value°" else "$value°"
+            val leftValue = -value
+            val leftLabel = if (leftValue > 0) "+$leftValue°" else "$leftValue°"
+            drawReferenceText(
+                canvas,
+                rightLabel,
+                cx + cos(rightRadians).toFloat() * 145f,
+                cy + sin(rightRadians).toFloat() * 145f + 5f,
+                11f,
+                Color.WHITE,
+                true,
+            )
+            drawReferenceText(
+                canvas,
+                leftLabel,
+                cx + cos(leftRadians).toFloat() * 145f,
+                cy + sin(leftRadians).toFloat() * 145f + 5f,
+                11f,
+                Color.WHITE,
+                true,
+            )
+        }
     }
 
     private fun recordAttitudeTrail(gaugeId: String, angle: Float, nowNanos: Long) {
@@ -1608,9 +1793,49 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP) {
-            val designX = (event.x - contentOffsetX) / contentScale
-            val designY = (event.y - contentOffsetY) / contentScale
+        val designX = (event.x - contentOffsetX) / contentScale
+        val designY = (event.y - contentOffsetY) / contentScale
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val dx = designX - 640f
+                val dy = designY - 278f
+                if (state.vehicleViewModeId != "rear" && dx * dx + dy * dy <= 174f * 174f) {
+                    cameraDragActive = true
+                    cameraDragged = false
+                    cameraLastX = designX
+                    cameraLastY = designY
+                    cameraReturnActive = false
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> if (cameraDragActive) {
+                val dx = designX - cameraLastX
+                val dy = designY - cameraLastY
+                if (kotlin.math.abs(dx) + kotlin.math.abs(dy) > 0.4f) cameraDragged = true
+                cameraYaw = normalizeCameraYaw(cameraYaw - dx * CAMERA_DRAG_YAW_DEGREES)
+                cameraElevation = (cameraElevation + dy * CAMERA_DRAG_ELEVATION_DEGREES)
+                    .coerceIn(MIN_CAMERA_ELEVATION, MAX_CAMERA_ELEVATION)
+                cameraLastX = designX
+                cameraLastY = designY
+                postInvalidateOnAnimation()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                cameraDragActive = false
+                cameraReturnActive = state.vehicleViewModeId == "auto"
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (cameraDragActive) {
+                    cameraDragActive = false
+                    cameraReturnActive = state.vehicleViewModeId == "auto"
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    if (cameraDragged) performClick()
+                    postInvalidateOnAnimation()
+                    return true
+                }
             if (state.readings.isNotEmpty() && previousGaugeZone.contains(designX, designY)) {
                 selectedGaugeIndex = (selectedGaugeIndex - 1 + state.readings.size) % state.readings.size
                 invalidate()
@@ -1628,8 +1853,16 @@ class LandscapeCockpitView(context: Context) : View(context) {
                 performClick()
                 return true
             }
+            }
         }
         return true
+    }
+
+    private fun normalizeCameraYaw(value: Float): Float {
+        var normalized = value
+        while (normalized > 180f) normalized -= 360f
+        while (normalized < -180f) normalized += 360f
+        return normalized
     }
 
     override fun performClick(): Boolean {
@@ -1642,6 +1875,13 @@ class LandscapeCockpitView(context: Context) : View(context) {
         private const val ATTITUDE_TRAIL_DURATION_NANOS = 900_000_000L
         private const val ATTITUDE_TRAIL_STEP_DEGREES = 1.25f
         private const val ATTITUDE_TRAIL_MAX_SAMPLES = 12
+        private const val ATTITUDE_FRAME_SMOOTHING = 0.24f
+        private const val DEFAULT_CAMERA_ELEVATION = 20f
+        private const val MIN_CAMERA_ELEVATION = 8f
+        private const val MAX_CAMERA_ELEVATION = 55f
+        private const val CAMERA_DRAG_YAW_DEGREES = 0.55f
+        private const val CAMERA_DRAG_ELEVATION_DEGREES = 0.28f
+        private const val CAMERA_RETURN_SMOOTHING = 0.08f
         private const val DESIGN_WIDTH = 1280f
         private const val DESIGN_HEIGHT = 592f
     }

@@ -7,6 +7,7 @@ enum class GaugeFaceStyle {
     STOPWATCH,
     ATTITUDE_PITCH,
     ATTITUDE_ROLL,
+    ATTITUDE_COMBINED,
     COURSE,
     QUALITY,
     INFO,
@@ -71,6 +72,7 @@ object GaugeScaleCatalog {
         )
         "pitch" -> attitude(gaugeId, GaugeFaceStyle.ATTITUDE_PITCH)
         "roll" -> attitude(gaugeId, GaugeFaceStyle.ATTITUDE_ROLL)
+        "attitude" -> attitude(gaugeId, GaugeFaceStyle.ATTITUDE_COMBINED)
         "g_force" -> analog(
             gaugeId, 0.0, 3.0, 0.5, 0.25,
             zones = listOf(GaugeZone(2.0, 2.5, GaugeZoneRole.CAUTION), GaugeZone(2.5, 3.0, GaugeZoneRole.DANGER)),

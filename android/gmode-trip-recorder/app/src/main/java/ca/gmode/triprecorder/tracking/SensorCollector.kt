@@ -34,6 +34,7 @@ class SensorCollector(context: Context) : SensorEventListener {
     private var gyroscopePeak = 0.0
     private var pitchDegrees: Double? = null
     private var rollDegrees: Double? = null
+    var onOrientationChanged: ((OrientationSnapshot) -> Unit)? = null
 
     fun start() {
         pressureSensor?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
@@ -103,6 +104,7 @@ class SensorCollector(context: Context) : SensorEventListener {
                 )
                 pitchDegrees = orientation.pitchDegrees
                 rollDegrees = orientation.rollDegrees
+                onOrientationChanged?.invoke(orientation)
             }
         }
     }

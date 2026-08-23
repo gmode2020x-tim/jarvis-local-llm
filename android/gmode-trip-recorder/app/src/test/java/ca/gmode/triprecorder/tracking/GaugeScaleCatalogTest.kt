@@ -26,13 +26,14 @@ class GaugeScaleCatalogTest {
 
     @Test
     fun attitudeScalesAreCenteredAndUseActualDegrees() {
-        listOf("pitch", "roll").forEach { id ->
+        listOf("pitch", "roll", "attitude").forEach { id ->
             val spec = GaugeScaleCatalog.forGauge(id, 0.0, "off_road")
             assertEquals(-45.0, spec.minimum, 0.0)
             assertEquals(45.0, spec.maximum, 0.0)
             assertEquals(0.5, spec.progress(0.0)!!, 0.0)
             assertEquals(listOf("-45", "-30", "-15", "0", "15", "30", "45"), spec.majorTicks.map { it.label })
         }
+        assertEquals(GaugeFaceStyle.ATTITUDE_COMBINED, GaugeScaleCatalog.forGauge("attitude", 0.0, "off_road").faceStyle)
     }
 
     @Test
