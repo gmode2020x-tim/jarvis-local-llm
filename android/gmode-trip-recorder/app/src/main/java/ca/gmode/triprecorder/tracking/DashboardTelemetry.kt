@@ -18,6 +18,7 @@ object DashboardTelemetry {
             batteryPercent = batteryPercent?.toDouble() ?: stored.batteryPercent.takeIf { storedIsCurrent },
             pitchDegrees = orientation.pitchDegrees ?: stored.pitchDegrees.takeIf { storedIsCurrent },
             rollDegrees = orientation.rollDegrees ?: stored.rollDegrees.takeIf { storedIsCurrent },
+            magneticHeadingDegrees = orientation.magneticHeadingDegrees,
         )
     }
 }

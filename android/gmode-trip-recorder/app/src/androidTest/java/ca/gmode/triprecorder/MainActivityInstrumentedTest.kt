@@ -68,6 +68,8 @@ class MainActivityInstrumentedTest {
                 offRoadSceneId = "sand",
                 pitchDegrees = -11.0,
                 rollDegrees = 17.0,
+                courseDegrees = 318.0,
+                courseSource = "GPS",
                 batteryPercent = 62,
                 readings = listOf(
                     CockpitReading(
@@ -120,6 +122,44 @@ class MainActivityInstrumentedTest {
             }
         }
         bitmap.recycle()
+    }
+
+    @Test
+    fun allFiveDetailedVehiclesProduceDashboardPreviews() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val scenes = listOf(
+            Triple("sxs", "OFF ROAD", "dirt"),
+            Triple("sand_rail", "OFF ROAD", "sand"),
+            Triple("truck", "STREET", "dirt"),
+            Triple("mini_jet_boat", "WATER", "dirt"),
+            Triple("snowmobile", "SNOW", "dirt"),
+        )
+        scenes.forEach { (vehicleId, tripType, offRoadScene) ->
+            cockpit.setState(
+                CockpitState(
+                    vehicleId = vehicleId,
+                    tripTypeLabel = tripType,
+                    offRoadSceneId = offRoadScene,
+                    pitchDegrees = 0.0,
+                    rollDegrees = 0.0,
+                    courseDegrees = 318.0,
+                    courseSource = "GPS",
+                    readings = listOf(CockpitReading("Attitude", "", "", gaugeId = "attitude")),
+                ),
+            )
+            val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            repeat(24) { cockpit.draw(canvas) }
+            val output = java.io.File(context.getExternalFilesDir(null), "gmode-3d-$vehicleId.png")
+            output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
     }
 
     @Test

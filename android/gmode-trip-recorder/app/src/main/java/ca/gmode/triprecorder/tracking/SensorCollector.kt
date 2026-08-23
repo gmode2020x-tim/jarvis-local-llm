@@ -15,6 +15,7 @@ import kotlin.math.sqrt
 data class OrientationSnapshot(
     val pitchDegrees: Double?,
     val rollDegrees: Double?,
+    val magneticHeadingDegrees: Double? = null,
 )
 
 class SensorCollector(context: Context) : SensorEventListener {
@@ -34,6 +35,7 @@ class SensorCollector(context: Context) : SensorEventListener {
     private var gyroscopePeak = 0.0
     private var pitchDegrees: Double? = null
     private var rollDegrees: Double? = null
+    private var magneticHeadingDegrees: Double? = null
     var onOrientationChanged: ((OrientationSnapshot) -> Unit)? = null
 
     fun start() {
@@ -69,7 +71,7 @@ class SensorCollector(context: Context) : SensorEventListener {
     }
 
     @Synchronized
-    fun orientation(): OrientationSnapshot = OrientationSnapshot(pitchDegrees, rollDegrees)
+    fun orientation(): OrientationSnapshot = OrientationSnapshot(pitchDegrees, rollDegrees, magneticHeadingDegrees)
 
     @Synchronized
     override fun onSensorChanged(event: SensorEvent) {
@@ -104,7 +106,13 @@ class SensorCollector(context: Context) : SensorEventListener {
                 )
                 pitchDegrees = orientation.pitchDegrees
                 rollDegrees = orientation.rollDegrees
-                onOrientationChanged?.invoke(orientation)
+                // Android +Z points out through the screen. The phone is mounted with its back
+                // facing forward, so vehicle-forward is the device -Z axis projected onto ENU.
+                magneticHeadingDegrees = VehicleOrientationMath.headingDegrees(
+                    east = -rotation[2].toDouble(),
+                    north = -rotation[5].toDouble(),
+                )
+                onOrientationChanged?.invoke(orientation.copy(magneticHeadingDegrees = magneticHeadingDegrees))
             }
         }
     }

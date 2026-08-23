@@ -17,7 +17,7 @@ class DashboardTelemetryTest {
                 accelerationPeakMs2 = 1.4,
                 gyroscopePeakRadS = 0.1,
             ),
-            orientation = OrientationSnapshot(pitchDegrees = 6.5, rollDegrees = -3.0),
+            orientation = OrientationSnapshot(pitchDegrees = 6.5, rollDegrees = -3.0, magneticHeadingDegrees = 318.0),
             batteryPercent = 74,
         )
 
@@ -26,6 +26,7 @@ class DashboardTelemetryTest {
         assertEquals(1007.5, merged.pressureHpa!!, 0.001)
         assertEquals(1.4, merged.accelerationPeakMs2!!, 0.001)
         assertEquals(74.0, merged.batteryPercent!!, 0.001)
+        assertEquals(318.0, merged.magneticHeadingDegrees!!, 0.001)
     }
 
     @Test

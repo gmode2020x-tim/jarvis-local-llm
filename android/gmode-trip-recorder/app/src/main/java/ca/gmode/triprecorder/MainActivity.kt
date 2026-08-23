@@ -1254,6 +1254,11 @@ class MainActivity : AppCompatActivity() {
                 if (::landscapeCockpit.isInitialized && !showingSettings) {
                     val currentTripType = active?.tripType ?: quickTripType
                     val vehicle = dashboardVehicle(currentTripType)
+                    val course = GaugeDisplayMath.hybridCourse(
+                        gpsCourseDegrees = telemetry.bearingDegrees.takeIf { active != null },
+                        speedKph = active?.lastSpeedMps?.times(3.6),
+                        magneticHeadingDegrees = telemetry.magneticHeadingDegrees,
+                    )
                     landscapeCockpit.setState(
                         CockpitState(
                             time = currentTime,
@@ -1289,6 +1294,8 @@ class MainActivity : AppCompatActivity() {
                             rollDegrees = telemetry.rollDegrees?.let {
                                 GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees)
                             },
+                            courseDegrees = course?.degrees,
+                            courseSource = course?.source,
                             attitudeCautionDegrees = dashboardConfig.attitudeCautionDegrees,
                             attitudeLimitDegrees = dashboardConfig.attitudeLimitDegrees,
                         ),

@@ -23,6 +23,7 @@ import ca.gmode.triprecorder.settings.SideButtonSettings
 import ca.gmode.triprecorder.settings.SideButtonSlot
 import ca.gmode.triprecorder.settings.DashboardSettings
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -65,6 +66,8 @@ data class CockpitState(
     val vehicleViewModeId: String = DashboardSettings.DEFAULT_VIEW_MODE_ID,
     val pitchDegrees: Double? = null,
     val rollDegrees: Double? = null,
+    val courseDegrees: Double? = null,
+    val courseSource: String? = null,
     val attitudeCautionDegrees: Double = DashboardSettings.DEFAULT_ATTITUDE_CAUTION_DEGREES,
     val attitudeLimitDegrees: Double = DashboardSettings.DEFAULT_ATTITUDE_LIMIT_DEGREES,
 )
@@ -129,6 +132,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private val attitudeTrailSamples = java.util.ArrayDeque<AttitudeTrailSample>()
     private var renderedPitch = 0f
     private var renderedRoll = 0f
+    private var renderedCourse: Float? = null
     private var cameraYaw = 0f
     private var cameraElevation = DEFAULT_CAMERA_ELEVATION
     private var cameraDragActive = false
@@ -276,6 +280,18 @@ class LandscapeCockpitView(context: Context) : View(context) {
             worst >= state.attitudeCautionDegrees -> "CAUTION" to Color.parseColor("#FFB000")
             else -> "STABLE" to Color.parseColor("#20B94B")
         }
+        state.courseDegrees?.let { course ->
+            val source = state.courseSource ?: "COURSE"
+            drawReferenceText(
+                canvas,
+                "$source ${normalizeBearing(course).toInt().toString().padStart(3, '0')}° ${cardinalCourse(course)}",
+                640f,
+                367f,
+                12f,
+                Color.WHITE,
+                true,
+            )
+        }
         drawReferenceText(canvas, label, 640f, 392f, 20f, color, true)
         drawReferenceText(
             canvas,
@@ -289,6 +305,13 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun signedDegrees(value: Double): String = "%+.0f°".format(value)
+
+    private fun cardinalCourse(value: Double): String {
+        val labels = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        return labels[((normalizeBearing(value) + 22.5) / 45.0).toInt() % labels.size]
+    }
+
+    private fun normalizeBearing(value: Double): Double = ((value % 360.0) + 360.0) % 360.0
 
     private data class VehicleArtwork(val bitmap: Bitmap, val contentBounds: Rect)
     private data class AttitudeTrailSample(val gaugeId: String, val angle: Float, val timestampNanos: Long)
@@ -461,7 +484,102 @@ class LandscapeCockpitView(context: Context) : View(context) {
             drawOuterTick(canvas, cx, cy, 201f, 180f + value, major)
             value += 5
         }
+        drawRadialCourseScale(canvas, cx, cy)
     }
+
+    private fun drawRadialCourseScale(canvas: Canvas, cx: Float, cy: Float) {
+        val target = state.courseDegrees?.toFloat()
+        if (target == null) {
+            renderedCourse = null
+            return
+        }
+        val current = renderedCourse
+        renderedCourse = if (current == null) normalizeBearing(target.toDouble()).toFloat() else approachBearing(current, target, COURSE_SMOOTHING)
+        val heading = renderedCourse ?: return
+        val reciprocal = normalizeBearing(heading + 180f)
+        val firstTick = floor((heading - 45f) / 5f).toInt() * 5
+        for (rawBearing in firstTick..(firstTick + 95) step 5) {
+            val bearing = normalizeBearing(rawBearing.toFloat())
+            val delta = signedBearingDelta(heading, bearing)
+            if (kotlin.math.abs(delta) > 45.01f) continue
+            val fade = (1f - ((kotlin.math.abs(delta) - 28f) / 17f).coerceIn(0f, 1f))
+            val alpha = (fade * 235f).toInt()
+            val normalizedTick = normalizeBearing(rawBearing.toDouble()).toInt()
+            val major = normalizedTick % 15 == 0
+            val color = Color.argb(alpha, 255, 255, 255)
+            drawDialTick(canvas, cx, cy, 204f, 270f + delta, if (major) 16f else 9f, if (major) 2.3f else 1.2f, color)
+            drawDialTick(canvas, cx, cy, 204f, 90f + delta, if (major) 16f else 9f, if (major) 2.3f else 1.2f, color)
+            if (major && kotlin.math.abs(delta) in 8f..35f) {
+                drawCourseArcLabel(canvas, cx, cy, 176f, 270f + delta, courseTickLabel(normalizedTick), alpha)
+                val rearTick = normalizeBearing(normalizedTick + 180.0).toInt()
+                drawCourseArcLabel(canvas, cx, cy, 176f, 90f + delta, courseTickLabel(rearTick), alpha)
+            }
+        }
+        drawCoursePointer(canvas, cx, cy, 270f, false)
+        drawCoursePointer(canvas, cx, cy, 90f, true)
+        drawCourseArcLabel(canvas, cx, cy, 184f, 270f, "${normalizeBearing(heading).toInt().toString().padStart(3, '0')}°", 255, 15f)
+        drawCourseArcLabel(canvas, cx, cy, 184f, 90f, "${reciprocal.toInt().toString().padStart(3, '0')}°", 235, 14f)
+        if (kotlin.math.abs(signedBearingDelta(heading, target)) > 0.15f) postInvalidateOnAnimation()
+    }
+
+    private fun drawCourseArcLabel(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        angleDegrees: Float,
+        label: String,
+        alpha: Int,
+        size: Float = 10f,
+    ) {
+        val radians = Math.toRadians(angleDegrees.toDouble())
+        drawReferenceText(
+            canvas,
+            label,
+            cx + cos(radians).toFloat() * radius,
+            cy + sin(radians).toFloat() * radius + size * 0.35f,
+            size,
+            Color.argb(alpha, 255, 255, 255),
+            true,
+        )
+    }
+
+    private fun drawCoursePointer(canvas: Canvas, cx: Float, cy: Float, angleDegrees: Float, inward: Boolean) {
+        val radians = Math.toRadians(angleDegrees.toDouble())
+        val centerRadius = if (inward) 186f else 185f
+        val pointRadius = if (inward) 174f else 173f
+        val sideAngle = 3.2f
+        paint.style = Paint.Style.FILL
+        paint.color = palette.accent
+        val pointer = Path()
+        pointer.moveTo(cx + cos(radians).toFloat() * pointRadius, cy + sin(radians).toFloat() * pointRadius)
+        listOf(angleDegrees - sideAngle, angleDegrees + sideAngle).forEach { side ->
+            val sideRadians = Math.toRadians(side.toDouble())
+            pointer.lineTo(cx + cos(sideRadians).toFloat() * centerRadius, cy + sin(sideRadians).toFloat() * centerRadius)
+        }
+        pointer.close()
+        canvas.drawPath(pointer, paint)
+    }
+
+    private fun courseTickLabel(bearing: Int): String = when (bearing) {
+        0 -> "N"
+        45 -> "NE"
+        90 -> "E"
+        135 -> "SE"
+        180 -> "S"
+        225 -> "SW"
+        270 -> "W"
+        315 -> "NW"
+        else -> bearing.toString()
+    }
+
+    private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
+
+    private fun signedBearingDelta(from: Float, to: Float): Float =
+        ((to - from + 540f) % 360f) - 180f
+
+    private fun approachBearing(current: Float, target: Float, amount: Float): Float =
+        normalizeBearing(current + signedBearingDelta(current, normalizeBearing(target)) * amount)
 
     private fun drawAttitudeZoneArc(
         canvas: Canvas,
@@ -1876,6 +1994,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         private const val ATTITUDE_TRAIL_STEP_DEGREES = 1.25f
         private const val ATTITUDE_TRAIL_MAX_SAMPLES = 12
         private const val ATTITUDE_FRAME_SMOOTHING = 0.24f
+        private const val COURSE_SMOOTHING = 0.18f
         private const val DEFAULT_CAMERA_ELEVATION = 20f
         private const val MIN_CAMERA_ELEVATION = 8f
         private const val MAX_CAMERA_ELEVATION = 55f

@@ -19,6 +19,7 @@ data class LiveTelemetry(
     val satelliteCount: Int? = null,
     val pitchDegrees: Double? = null,
     val rollDegrees: Double? = null,
+    val magneticHeadingDegrees: Double? = null,
     val updatedAtEpochMs: Long = 0,
 )
 
@@ -49,6 +50,7 @@ class LiveTelemetryStore(context: Context) {
             if (point.satelliteCount == null) remove(KEY_SATELLITES) else putInt(KEY_SATELLITES, point.satelliteCount)
             putNullableDouble(KEY_PITCH, orientation.pitchDegrees)
             putNullableDouble(KEY_ROLL, orientation.rollDegrees)
+            putNullableDouble(KEY_MAGNETIC_HEADING, orientation.magneticHeadingDegrees)
             putLong(KEY_UPDATED, System.currentTimeMillis())
         }.apply()
     }
@@ -68,6 +70,7 @@ class LiveTelemetryStore(context: Context) {
         satelliteCount = preferences.getInt(KEY_SATELLITES, -1).takeIf { it >= 0 },
         pitchDegrees = preferences.getDouble(KEY_PITCH),
         rollDegrees = preferences.getDouble(KEY_ROLL),
+        magneticHeadingDegrees = preferences.getDouble(KEY_MAGNETIC_HEADING),
         updatedAtEpochMs = preferences.getLong(KEY_UPDATED, 0),
     )
 
@@ -98,6 +101,7 @@ class LiveTelemetryStore(context: Context) {
         private const val KEY_SATELLITES = "satellites"
         private const val KEY_PITCH = "pitch_degrees"
         private const val KEY_ROLL = "roll_degrees"
+        private const val KEY_MAGNETIC_HEADING = "magnetic_heading_degrees"
         private const val KEY_UPDATED = "updated_at"
     }
 }
