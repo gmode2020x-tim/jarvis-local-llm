@@ -10,33 +10,21 @@ Jarvis is a self-hosted assistant package for a local workstation plus an option
 - helper tools for project status, host checks, model checks, and Home Assistant voice experiments
 - natural Home Assistant phrase resolution with deterministic Jarvis-personality answers
 - voice dataset preparation utilities for custom TTS work
-- an offline-first Android GPS/telemetry recorder with automatic Home Assistant catch-up
+- a companion Home Assistant ingestion API for the standalone GMODE Trip Recorder app
 
 Use only voices, recordings, and automation targets that you own or have permission to use.
 
 ![Jarvis architecture](docs/assets/architecture.svg)
 
-## Install GMODE Trip Recorder 2.0 on Android
+## GMODE Trip Recorder
 
-The recommended phone download is the release ZIP. It contains the signed sideload APK, SHA-256 checksums, the complete installation guide, and screenshots.
+The Android app, source, documentation, and releases now live in the dedicated public repository:
 
-- [Download GMODE Trip Recorder v2.0.0 ZIP](https://github.com/gmode2020x-tim/jarvis-local-llm/releases/download/v2.0.0/GMODE-Trip-Recorder-v2.0.0-install.zip)
-- [Download the APK only](https://github.com/gmode2020x-tim/jarvis-local-llm/releases/download/v2.0.0/GMODE-Trip-Recorder-v2.0.0-sideload.apk)
-- [Open the v2.0.0 release page](https://github.com/gmode2020x-tim/jarvis-local-llm/releases/tag/v2.0.0)
-- [Read the complete illustrated installation and troubleshooting guide](android/gmode-trip-recorder/README.md#install-on-a-samsung-galaxy-s24)
+- [GMODE Trip Recorder source and installation guide](https://github.com/gmode2020x-tim/gmode-trip-recorder)
+- [Download GMODE Trip Recorder v2.0.0](https://github.com/gmode2020x-tim/gmode-trip-recorder/releases/tag/v2.0.0)
+- [GMODE app website](https://gmode.ca)
 
-On a Samsung phone:
-
-1. Download the ZIP, then open **My Files > Downloads** and extract it.
-2. Tap `GMODE-Trip-Recorder-v2.0.0-sideload.apk`.
-3. If Android blocks the installer, tap **Settings** and enable **Allow from this source** for My Files or the browser that opened it.
-4. Tap **Install**, or **Update** if GMODE is already installed. Updating retains its local trips and settings; uninstalling first removes app-private data.
-5. Open GMODE, press **Start**, enable precise location, and allow notifications.
-6. For automatic departure recording, grant **Allow all the time** location access, set GMODE battery use to **Unrestricted**, and remove it from Samsung sleeping/deep-sleeping app lists.
-
-Do not install the `.aab` file on a phone; it is only for Google Play Console.
-
-![GMODE Trip Recorder v2 cockpit](android/gmode-trip-recorder/play-store/screenshots/01-attitude-dashboard.png)
+Jarvis retains the companion Home Assistant integration and authenticated mobile upload API.
 
 ## Quick Start
 
@@ -114,7 +102,7 @@ http://YOUR-LLM-HOST:8787
 - [Wake word setup](docs/JARVIS_WAKE_WORD.md)
 - [Voice dataset prep](docs/VOICE_DATASETS.md)
 - [Public release checklist](docs/SECURITY_PUBLIC_RELEASE.md)
-- [Android GMODE Trip Recorder](android/gmode-trip-recorder/README.md)
+- [Android GMODE Trip Recorder](https://github.com/gmode2020x-tim/gmode-trip-recorder)
 - [Home Assistant mobile trip ingestion](home-assistant/README.md)
 
 ## Conversation History
@@ -135,8 +123,7 @@ Conversation text can contain private household information. Both files are igno
 - `scripts/setup_jarvis_vm.sh` - installs Node, Ollama, models, and the VM-side Jarvis UI service.
 - `scripts/setup_ollama_linux.sh` - installs and exposes Ollama on a Linux LLM host.
 - `vm/llm-ui/` - deployable VM-side dashboard, API, Home Assistant webhook, Docker Compose, and systemd unit.
-- `android/gmode-trip-recorder/` - Kotlin Android app for offline GPS, S24 sensor telemetry, and retrying HA uploads.
-- `home-assistant/custom_components/gmode_trip_recorder/` - versioned HA trip recorder and authenticated mobile upload API.
+- `home-assistant/custom_components/gmode_trip_recorder/` - companion ingestion API for the standalone [GMODE Trip Recorder](https://github.com/gmode2020x-tim/gmode-trip-recorder) app.
 
 ## Public Safety
 

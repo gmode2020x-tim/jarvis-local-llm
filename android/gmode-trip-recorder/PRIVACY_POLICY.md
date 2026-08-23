@@ -1,5 +1,7 @@
 # GMODE Trip Recorder Privacy Policy
 
+> GMODE Trip Recorder has moved to its [dedicated public repository](https://github.com/gmode2020x-tim/gmode-trip-recorder). This compatibility copy remains available for existing app installations.
+
 Effective date: August 23, 2026
 
 GMODE Trip Recorder is a local-first GPS and vehicle telemetry application. It has no advertising, analytics, account system, crash-reporting SDK, or GMODE-operated cloud service. It does not sell personal data.
@@ -52,4 +54,4 @@ The app is a vehicle/trip utility and is not designed for children. It does not 
 
 Policy changes will be published in this repository and identified by a new effective date. Questions or security reports can be opened through the repository's public issue tracker without including location data, access tokens, or other secrets:
 
-https://github.com/gmode2020x-tim/jarvis-local-llm/issues
+https://github.com/gmode2020x-tim/gmode-trip-recorder/issues
