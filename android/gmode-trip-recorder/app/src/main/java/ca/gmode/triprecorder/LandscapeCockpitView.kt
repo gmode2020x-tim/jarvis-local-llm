@@ -243,6 +243,9 @@ class LandscapeCockpitView(context: Context) : View(context) {
         canvas.clipCircle(cx, cy, 174f)
         if (sceneGauge) {
             canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
+            if (reading.gaugeId == "pitch" || reading.gaugeId == "roll") {
+                drawAttitudeZeroLine(canvas, cx, cy)
+            }
             val viewId = DashboardSettings.resolveVehicleView(
                 modeId = state.vehicleViewModeId,
                 gaugeTitle = reading.title,
@@ -273,12 +276,107 @@ class LandscapeCockpitView(context: Context) : View(context) {
             paint.shader = null
         }
         canvas.restore()
+        drawOuterScaleRing(canvas, spec)
         when (spec.faceStyle) {
             GaugeFaceStyle.ATTITUDE_PITCH -> drawPitchGaugeMarks(canvas)
             GaugeFaceStyle.ATTITUDE_ROLL -> drawRollGaugeMarks(canvas, spec)
             GaugeFaceStyle.INFO -> drawCoordinateGrid(canvas)
             else -> drawScaledGaugeMarks(canvas, reading, spec)
         }
+    }
+
+    private fun drawAttitudeZeroLine(canvas: Canvas, cx: Float, cy: Float) {
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.BUTT
+        paint.color = Color.argb(210, 0, 0, 0)
+        paint.strokeWidth = 6f
+        canvas.drawLine(cx - 166f, cy, cx + 166f, cy, paint)
+        paint.color = Color.argb(225, 255, 255, 255)
+        paint.strokeWidth = 2f
+        canvas.drawLine(cx - 166f, cy, cx + 166f, cy, paint)
+        paint.color = palette.accent
+        paint.strokeWidth = 4f
+        canvas.drawLine(cx - 12f, cy, cx + 12f, cy, paint)
+        paint.strokeWidth = 2f
+        canvas.drawLine(cx - 166f, cy - 8f, cx - 166f, cy + 8f, paint)
+        canvas.drawLine(cx + 166f, cy - 8f, cx + 166f, cy + 8f, paint)
+    }
+
+    private fun drawOuterScaleRing(canvas: Canvas, spec: GaugeScaleSpec) {
+        val cx = 640f
+        val cy = 278f
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.BUTT
+
+        // The reference artwork contains a fixed decorative tick ring. Cover only that annulus,
+        // retain the surrounding bezel, then rebuild the ticks from the same live scale spec used
+        // by the labels and needle.
+        paint.color = Color.parseColor("#080808")
+        paint.strokeWidth = 34f
+        canvas.drawCircle(cx, cy, 188f, paint)
+        paint.color = Color.parseColor("#555555")
+        paint.strokeWidth = 2f
+        canvas.drawCircle(cx, cy, 206f, paint)
+        paint.color = Color.parseColor("#3D3D3D")
+        canvas.drawCircle(cx, cy, 170f, paint)
+
+        if (spec.faceStyle == GaugeFaceStyle.INFO) return
+        if (spec.faceStyle == GaugeFaceStyle.ATTITUDE_PITCH) {
+            paint.color = gaugeZoneColor(GaugeZoneRole.CAUTION)
+            paint.strokeWidth = 5f
+            val cautionOval = RectF(cx - 181f, cy - 181f, cx + 181f, cy + 181f)
+            listOf(135f to 15f, 210f to 15f, 30f to 15f, 315f to 15f).forEach { (start, sweep) ->
+                canvas.drawArc(cautionOval, start, sweep, false, paint)
+            }
+            var value = -45.0
+            while (value <= 45.0) {
+                val progress = (value + 45.0) / 90.0
+                val major = value % 15.0 == 0.0
+                drawOuterTick(canvas, cx, cy, 201f, (135.0 + progress * 90.0).toFloat(), major)
+                drawOuterTick(canvas, cx, cy, 201f, (45.0 - progress * 90.0).toFloat(), major)
+                value += 5.0
+            }
+            return
+        }
+
+        spec.zones.forEach { zone ->
+            val start = spec.startAngle + spec.progress(zone.startValue)!!.toFloat() * spec.sweepAngle
+            val sweep = (spec.progress(zone.endValue)!! - spec.progress(zone.startValue)!!).toFloat() * spec.sweepAngle
+            paint.color = gaugeZoneColor(zone.role)
+            paint.strokeWidth = 5f
+            canvas.drawArc(RectF(cx - 181f, cy - 181f, cx + 181f, cy + 181f), start, sweep, false, paint)
+        }
+
+        val minor = spec.minorStep
+        if (minor != null && minor > 0.0) {
+            var value = spec.minimum
+            while (value <= spec.maximum + minor / 10.0) {
+                val major = spec.majorTicks.any { kotlin.math.abs(it.value - value) < minor / 10.0 }
+                val angle = spec.startAngle + spec.progress(value)!!.toFloat() * spec.sweepAngle
+                drawOuterTick(canvas, cx, cy, 201f, angle, major)
+                value += minor
+            }
+        } else {
+            spec.majorTicks.forEach { tick ->
+                val angle = spec.startAngle + spec.progress(tick.value)!!.toFloat() * spec.sweepAngle
+                drawOuterTick(canvas, cx, cy, 201f, angle, true)
+            }
+        }
+    }
+
+    private fun drawOuterTick(canvas: Canvas, cx: Float, cy: Float, radius: Float, angle: Float, major: Boolean) {
+        drawDialTick(
+            canvas = canvas,
+            cx = cx,
+            cy = cy,
+            radius = radius,
+            angle = angle,
+            length = if (major) 20f else 10f,
+            width = if (major) 3f else 1.5f,
+            color = Color.WHITE,
+        )
     }
 
     private fun drawPitchGaugeMarks(canvas: Canvas) {
@@ -312,17 +410,10 @@ class LandscapeCockpitView(context: Context) : View(context) {
     }
 
     private fun drawRollGaugeMarks(canvas: Canvas, spec: GaugeScaleSpec) {
-        val oval = RectF(488f, 126f, 792f, 430f)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 8f
-        paint.color = Color.argb(185, 255, 157, 0)
-        canvas.drawArc(oval, 225f, 15f, false, paint)
-        canvas.drawArc(oval, 300f, 15f, false, paint)
         spec.majorTicks.forEach { tick ->
             val angle = spec.startAngle + spec.progress(tick.value)!!.toFloat() * spec.sweepAngle
-            drawDialTick(canvas, 640f, 278f, 153f, angle, 15f, 3f, Color.WHITE)
             val radians = Math.toRadians(angle.toDouble())
-            drawReferenceText(canvas, "${tick.label}°", 640f + cos(radians).toFloat() * 124f, 282f + sin(radians).toFloat() * 124f, 13f, Color.WHITE, true)
+            drawReferenceText(canvas, "${tick.label}°", 640f + cos(radians).toFloat() * 108f, 282f + sin(radians).toFloat() * 108f, 13f, Color.WHITE, true)
         }
         drawCalibrationStrip(canvas)
     }
