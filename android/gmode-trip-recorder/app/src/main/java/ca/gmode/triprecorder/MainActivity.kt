@@ -234,6 +234,7 @@ class MainActivity : AppCompatActivity() {
                     rollDegrees = orientation.rollDegrees?.let {
                         GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees)
                     },
+                    magneticHeadingDegrees = orientation.magneticHeadingDegrees,
                 )
             }
         }

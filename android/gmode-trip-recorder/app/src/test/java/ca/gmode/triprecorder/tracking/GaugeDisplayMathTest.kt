@@ -25,4 +25,12 @@ class GaugeDisplayMathTest {
         assertEquals(CourseSnapshot(359.0, "MAG"), GaugeDisplayMath.hybridCourse(null, null, -1.0))
         assertEquals(null, GaugeDisplayMath.hybridCourse(null, null, null))
     }
+
+    @Test
+    fun courseSmoothingTakesTheShortPathThroughNorth() {
+        assertEquals(2.0, GaugeDisplayMath.signedBearingDelta(359.0, 1.0), 0.001)
+        assertEquals(-2.0, GaugeDisplayMath.signedBearingDelta(1.0, 359.0), 0.001)
+        assertEquals(359.5, GaugeDisplayMath.smoothBearing(359.0, 1.0, 0.25), 0.001)
+        assertEquals(0.5, GaugeDisplayMath.smoothBearing(1.0, 359.0, 0.25), 0.001)
+    }
 }

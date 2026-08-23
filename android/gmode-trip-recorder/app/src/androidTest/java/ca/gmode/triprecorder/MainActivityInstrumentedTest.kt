@@ -31,6 +31,61 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
+    fun liveMagneticCourseUpdatesImmediatelyWithoutReplacingMovingGpsCourse() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.setState(CockpitState(courseDegrees = 310.0, courseSource = "MAG"))
+        cockpit.setLiveAttitude(0.0, 0.0, 318.0)
+        assertEquals(318.0, cockpit.liveCourseSnapshot().first!!, 0.001)
+        assertEquals("MAG", cockpit.liveCourseSnapshot().second)
+
+        cockpit.setState(CockpitState(courseDegrees = 92.0, courseSource = "GPS"))
+        cockpit.setLiveAttitude(0.0, 0.0, 270.0)
+        assertEquals(92.0, cockpit.liveCourseSnapshot().first!!, 0.001)
+        assertEquals("GPS", cockpit.liveCourseSnapshot().second)
+    }
+
+    @Test
+    fun cautionAndLimitIlluminateTheCompleteOuterBezel() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val reading = listOf(CockpitReading("Attitude", "", "", gaugeId = "attitude"))
+
+        cockpit.setState(CockpitState(pitchDegrees = 16.0, rollDegrees = 0.0, readings = reading))
+        cockpit.draw(canvas)
+        assertEquals("CAUTION", cockpit.attitudeAlertLabel())
+        val caution = bitmap.getPixel(640, 69)
+        assertTrue(android.graphics.Color.red(caution) > android.graphics.Color.blue(caution))
+        assertTrue(android.graphics.Color.green(caution) > android.graphics.Color.blue(caution))
+
+        cockpit.setState(
+            CockpitState(
+                vehicleId = "sand_rail",
+                offRoadSceneId = "sand",
+                pitchDegrees = 31.0,
+                rollDegrees = 0.0,
+                courseDegrees = 318.0,
+                courseSource = "MAG",
+                readings = reading,
+            ),
+        )
+        repeat(20) { cockpit.draw(canvas) }
+        assertEquals("LIMIT", cockpit.attitudeAlertLabel())
+        val limit = bitmap.getPixel(640, 69)
+        assertTrue(android.graphics.Color.red(limit) > android.graphics.Color.green(limit) * 2)
+        val output = java.io.File(context.getExternalFilesDir(null), "gmode-limit-bezel-preview.png")
+        output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+    }
+
+    @Test
     fun zeroAttitude3DPreviewRendersInsideTheGauge() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val cockpit = LandscapeCockpitView(context)

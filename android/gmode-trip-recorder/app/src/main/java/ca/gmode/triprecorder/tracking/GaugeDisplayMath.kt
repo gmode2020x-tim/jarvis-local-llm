@@ -19,6 +19,12 @@ object GaugeDisplayMath {
         return gpsCourseDegrees?.takeIf { it.isFinite() }?.let { CourseSnapshot(normalizeBearing(it), "GPS") }
     }
 
+    fun signedBearingDelta(from: Double, to: Double): Double =
+        ((normalizeBearing(to) - normalizeBearing(from) + 540.0) % 360.0) - 180.0
+
+    fun smoothBearing(current: Double, target: Double, amount: Double): Double =
+        normalizeBearing(current + signedBearingDelta(current, target) * amount.coerceIn(0.0, 1.0))
+
     private fun normalizeAngle(value: Double): Double =
         ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
 

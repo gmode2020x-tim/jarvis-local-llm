@@ -22,6 +22,7 @@ import ca.gmode.triprecorder.settings.SideButtonConfig
 import ca.gmode.triprecorder.settings.SideButtonSettings
 import ca.gmode.triprecorder.settings.SideButtonSlot
 import ca.gmode.triprecorder.settings.DashboardSettings
+import ca.gmode.triprecorder.tracking.GaugeDisplayMath
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.min
@@ -168,9 +169,27 @@ class LandscapeCockpitView(context: Context) : View(context) {
         invalidate()
     }
 
-    fun setLiveAttitude(pitchDegrees: Double?, rollDegrees: Double?) {
-        state = state.copy(pitchDegrees = pitchDegrees, rollDegrees = rollDegrees)
+    fun setLiveAttitude(
+        pitchDegrees: Double?,
+        rollDegrees: Double?,
+        magneticHeadingDegrees: Double? = null,
+    ) {
+        val useLiveMagneticCourse = magneticHeadingDegrees != null && state.courseSource != "GPS"
+        state = state.copy(
+            pitchDegrees = pitchDegrees,
+            rollDegrees = rollDegrees,
+            courseDegrees = if (useLiveMagneticCourse) normalizeBearing(magneticHeadingDegrees!!) else state.courseDegrees,
+            courseSource = if (useLiveMagneticCourse) "MAG" else state.courseSource,
+        )
         postInvalidateOnAnimation()
+    }
+
+    internal fun liveCourseSnapshot(): Pair<Double?, String?> = state.courseDegrees to state.courseSource
+
+    internal fun attitudeAlertLabel(): String = when {
+        maxOf(kotlin.math.abs(state.pitchDegrees ?: 0.0), kotlin.math.abs(state.rollDegrees ?: 0.0)) >= state.attitudeLimitDegrees -> "LIMIT"
+        maxOf(kotlin.math.abs(state.pitchDegrees ?: 0.0), kotlin.math.abs(state.rollDegrees ?: 0.0)) >= state.attitudeCautionDegrees -> "CAUTION"
+        else -> "STABLE"
     }
 
     internal fun cameraSnapshot(): Pair<Float, Float> = cameraYaw to cameraElevation
@@ -485,6 +504,31 @@ class LandscapeCockpitView(context: Context) : View(context) {
             value += 5
         }
         drawRadialCourseScale(canvas, cx, cy)
+        drawAttitudeAlertBezel(canvas, cx, cy)
+    }
+
+    private fun drawAttitudeAlertBezel(canvas: Canvas, cx: Float, cy: Float) {
+        val alert = attitudeAlertLabel()
+        if (alert == "STABLE") return
+        val baseColor = if (alert == "LIMIT") Color.parseColor("#F20D20") else Color.parseColor("#FF9D00")
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.color = baseColor
+        paint.strokeWidth = 5f
+        canvas.drawCircle(cx, cy, 209f, paint)
+
+        val glowAlpha = if (alert == "LIMIT") {
+            val phase = (System.nanoTime() % ALERT_FLASH_PERIOD_NANOS).toDouble() / ALERT_FLASH_PERIOD_NANOS.toDouble()
+            (70 + ((sin(phase * Math.PI * 2.0) + 1.0) * 0.5 * 150)).toInt()
+        } else {
+            105
+        }
+        paint.color = Color.argb(glowAlpha, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor))
+        paint.strokeWidth = if (alert == "LIMIT") 14f else 11f
+        canvas.drawCircle(cx, cy, 209f, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+        if (alert == "LIMIT") postInvalidateDelayed(ALERT_FRAME_DELAY_MILLIS)
     }
 
     private fun drawRadialCourseScale(canvas: Canvas, cx: Float, cy: Float) {
@@ -500,7 +544,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         val firstTick = floor((heading - 45f) / 5f).toInt() * 5
         for (rawBearing in firstTick..(firstTick + 95) step 5) {
             val bearing = normalizeBearing(rawBearing.toFloat())
-            val delta = signedBearingDelta(heading, bearing)
+            val delta = GaugeDisplayMath.signedBearingDelta(heading.toDouble(), bearing.toDouble()).toFloat()
             if (kotlin.math.abs(delta) > 45.01f) continue
             val fade = (1f - ((kotlin.math.abs(delta) - 28f) / 17f).coerceIn(0f, 1f))
             val alpha = (fade * 235f).toInt()
@@ -519,7 +563,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
         drawCoursePointer(canvas, cx, cy, 90f, true)
         drawCourseArcLabel(canvas, cx, cy, 184f, 270f, "${normalizeBearing(heading).toInt().toString().padStart(3, '0')}°", 255, 15f)
         drawCourseArcLabel(canvas, cx, cy, 184f, 90f, "${reciprocal.toInt().toString().padStart(3, '0')}°", 235, 14f)
-        if (kotlin.math.abs(signedBearingDelta(heading, target)) > 0.15f) postInvalidateOnAnimation()
+        if (kotlin.math.abs(GaugeDisplayMath.signedBearingDelta(heading.toDouble(), target.toDouble())) > 0.15f) postInvalidateOnAnimation()
     }
 
     private fun drawCourseArcLabel(
@@ -575,11 +619,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
 
-    private fun signedBearingDelta(from: Float, to: Float): Float =
-        ((to - from + 540f) % 360f) - 180f
-
     private fun approachBearing(current: Float, target: Float, amount: Float): Float =
-        normalizeBearing(current + signedBearingDelta(current, normalizeBearing(target)) * amount)
+        GaugeDisplayMath.smoothBearing(current.toDouble(), target.toDouble(), amount.toDouble()).toFloat()
 
     private fun drawAttitudeZoneArc(
         canvas: Canvas,
@@ -1994,7 +2035,9 @@ class LandscapeCockpitView(context: Context) : View(context) {
         private const val ATTITUDE_TRAIL_STEP_DEGREES = 1.25f
         private const val ATTITUDE_TRAIL_MAX_SAMPLES = 12
         private const val ATTITUDE_FRAME_SMOOTHING = 0.24f
-        private const val COURSE_SMOOTHING = 0.18f
+        private const val COURSE_SMOOTHING = 0.12f
+        private const val ALERT_FLASH_PERIOD_NANOS = 760_000_000L
+        private const val ALERT_FRAME_DELAY_MILLIS = 50L
         private const val DEFAULT_CAMERA_ELEVATION = 20f
         private const val MIN_CAMERA_ELEVATION = 8f
         private const val MAX_CAMERA_ELEVATION = 55f
