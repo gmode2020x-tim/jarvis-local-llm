@@ -2,4 +2,6 @@
     <string name="app_name">GMODE Trip Recorder</string>
     <string name="tracking_channel_name">Trip recording</string>
     <string name="tracking_notification_title">Recording trip</string>
+    <string name="location_disclosure">GMODE Trip Recorder collects precise location data to record your route and to automatically start or stop a trip when you leave or return home, even when the app is closed or not in use. Route and phone telemetry stay on your device until they are sent to the Home Assistant server you configure. GMODE has no advertising, does not sell personal data, and does not send data to a GMODE-operated cloud service.</string>
+    <string name="privacy_summary">GMODE records GPS route points, motion and pressure sensor summaries, battery state, network type, and satellite count for trips you start or allow the app to start automatically. Data is stored in the app-private database and is shared only with the Home Assistant server you configure or a file destination you explicitly choose. Your Home Assistant token is encrypted with Android Keystore. The app contains no advertising, analytics, account system, or crash-reporting service.</string>
 </resources>

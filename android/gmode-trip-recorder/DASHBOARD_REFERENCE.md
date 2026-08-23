@@ -1,84 +1,68 @@
-# Dashboard reference specification
+# Dashboard Reference Specification
 
-The supplied dashboard image is the authoritative visual layout and artwork source for the Android cockpit.
+The supplied automotive dashboard image remains the authoritative visual geometry for GMODE v2. Live content replaces only the display/control information that must respond to sensors, settings, installed apps, or trip state.
 
-## Source-art rendering
+## Rendering contract
 
-- The app uses lossless PNG pieces cut directly from the supplied image rather than recreating its surfaces with approximate vector drawing.
-- The five pieces are the top canopy, left middle, centre middle, right middle, and footer.
-- Reassembling the pieces on the 1280 × 592 design grid is pixel-identical to the cleaned source master.
-- The clock, gauge name/value, footer readout, red corner indicators, and six side-button labels/icons are cleared from the source artwork and redrawn from live application state.
-- The original side panels use invisible touch regions mapped to the six saved button configurations; the artwork itself is not distorted or reflowed.
+- Native design grid: `1280 x 592` (`2.1622:1`).
+- Scale mode: one uniform `FIT_CENTER` transform. X and Y are never stretched independently.
+- Extra screen area is filled with black/leather letterboxing.
+- Touches are transformed back into the native grid before hit testing.
+- Lossless reference pieces preserve the canopy, left/centre/right middle panels, footer, leather, seams, and bezel.
+- The live scene covers the complete central aperture; no baked-in default mountain scene may show through.
 
-## Source geometry
+## Primary geometry
 
-- Native reference canvas: `1280 × 592` pixels (`2.1622:1`).
-- Rendering rule: draw on the native 1280 × 592 coordinate grid, then scale uniformly with `FIT_CENTER`.
-- Never independently stretch the X and Y axes. Remaining pixels on a mismatched display use the same black leather texture as the dashboard.
-- Touch coordinates are transformed back into the 1280 × 592 grid before hit testing.
-
-## Measured regions
-
-| Region | Reference coordinates |
+| Region | Native coordinates |
 | --- | --- |
-| Top canopy | `x 70–1209`, `y 0–98` |
-| Central gauge | centre approximately `(640, 278)`, outer radius approximately `212` |
-| Left label column | `x 36–307`, rows beginning near `y 96`, `214`, and `337` |
-| Left icon column | `x 307–428` |
-| Right icon column | `x 852–972` |
-| Right label column | `x 972–1244` |
-| Footer | `x 69–1210`, `y 466–592` |
-| Footer centre controls | arrows near `x 464` and `x 816`; title centred at `x 640` |
+| Top canopy | `x 70-1209`, `y 0-98` |
+| Central gauge | centre `(640, 278)`, bezel radius about `212` |
+| Left labels | `x 36-307` |
+| Left icon panel | `x 307-428` |
+| Right icon panel | `x 852-972` |
+| Right labels | `x 972-1244` |
+| Footer | `x 69-1210`, `y 466-592` |
+| Previous/next arrows | near `(464, 517)` and `(816, 517)` |
 
-## Visual hierarchy
+## Radial side-icon centres
 
-1. Near-black outer canvas.
-2. Fine black automotive-leather grain.
-3. Thin graphite frame and stitched/seamed panel dividers.
-4. Curved top canopy with red status symbols and centred white time.
-5. Three raised control rows per side. Each row has a wide label panel and a narrow icon panel next to the gauge.
-6. One circular gauge above all adjoining panels.
-7. Curved footer with trip status, gauge navigation arrows, and utility controls.
+The icon panels remain rectangular and their touch targets do not move, but icon artwork follows the circular gauge arc:
 
-## Gauge construction
+| Slot | Centre |
+| --- | --- |
+| Left top | `(398, 155)` |
+| Left middle | `(368, 276)` |
+| Left bottom | `(398, 397)` |
+| Right top | `(897, 155)` |
+| Right middle | `(927, 276)` |
+| Right bottom | `(897, 397)` |
 
-- One active gauge at a time; configured gauges are selected with the footer arrows.
-- Layered black/graphite bezel with narrow silver highlights.
-- White major/minor ticks with restrained red accent ticks.
-- Photographic blue-sky mountain and rocky-ground interior.
-- Selected vehicle artwork centred over the terrain. Each of the nine vehicle profiles includes independent side, front, and rear transparent artwork.
-- With the phone mounted in landscape and its back facing forward, Automatic perspective shows side artwork for pitch or pitch-dominant motion and rear artwork for roll or roll-dominant motion. Side, front, and rear can also be locked explicitly.
-- Level calibration samples the mounted phone while the vehicle is stopped on flat ground and refuses to replace the saved pitch/roll zero if the accelerometer or gyroscope reports movement.
-- White gauge title and scale labels; large red live value.
-- Zero/calibration scale at the bottom of pitch and roll gauges.
+Top/bottom icons are 15 px inward from the former grid; middle icons are 15 px outward. This creates an obvious radial relationship without compromising the reference label panels.
 
-## Configurable side controls
+## Live central gauge
 
-The initial labels and mappings match the reference artwork:
+- Thirteen selectable gauge definitions share the same aperture.
+- All selected instruments are reachable with wrapping footer navigation; there is no count limit.
+- Outer decorative ticks are covered and rebuilt from the same `GaugeScaleSpec` as inner labels and needle/progress.
+- Information faces such as Coordinates intentionally have no artificial dial ticks.
 
-- `RADIO`: start recording.
-- `NAVI`: cycle trip type.
-- `MUSIC`: automatic-recording settings.
-- `PHONE`: stop recording.
-- `INTERNET`: synchronize queued data.
-- `APPS`: Home Assistant settings.
-- Each of these six slots can be assigned a custom label, one of the dashboard icon styles, the actual target application's icon, and either a GMODE action or any installed launchable application.
-- App targets are stored as an exact Android launcher component. If an app is removed, tapping its button reports that it is unavailable and the settings editor marks the saved target as missing until the user chooses another app.
-- Footer centre arrows: previous/next configured gauge.
-- Footer utilities: theme and settings.
+## 3D Attitude face
 
-## Live corner indicators
+- Scene/vehicle pairs: Street/Truck, dirt Off road/SxS, Sand dunes/Sand rail, Snow/Snowmobile, Water/Mini jet boat.
+- Camera begins high and behind, facing forward as the driver does.
+- The phone back faces forward. Mirrored roll drives both vehicle chassis and the theme-coloured horizontal line in the same screen direction.
+- The current line is full strength behind the vehicle. Earlier positions fade by age to visualize rotation history; opacity does not fade merely toward the line ends.
+- Roll ticks occupy the left/right arcs. Current course and reciprocal course occupy the top/bottom arcs at the same radial hierarchy.
+- GPS course is used at/above 5 km/h; live magnetic course is used when slower, with shortest-path north-wrap smoothing.
+- Absolute pitch/roll at caution makes the full outer bezel solid orange. Limit makes it red with a pulsing glow.
 
-- Top left: validated Wi-Fi, GPS/satellite fix, and Bluetooth state. Tapping Bluetooth requests Nearby Devices permission when required, then opens Bluetooth settings.
-- Top right: validated internet, Home Assistant state, battery temperature, and queued upload count.
-- Bottom left: GPS state, recording/standby state, trip-type code, and elapsed trip time.
-- Bottom right: battery percentage/charging state, theme control, and settings control.
-- Active indicators use the selected theme accent. Inactive indicators use a deliberately dimmed red; unavailable Bluetooth state shows `?` rather than pretending to be off.
+## Live indicators and controls
 
-## Responsive acceptance criteria
+The cleared source regions are redrawn from real state: clock, Wi-Fi, GPS/satellites, Bluetooth, network/Home Assistant, battery temperature, recording/trip type/time, charge/percentage, theme, settings, gauge title/value/subtitle, and all six labels/icons. Disabled/unavailable state is dimmed rather than simulated.
 
-- The gauge remains circular on every device.
-- The relative coordinates above do not reflow or reorder.
-- All controls remain inside the fitted reference canvas.
-- Letterboxing is symmetrical and visually continuous with the leather dashboard.
-- Tap targets follow the rendered controls after scaling and centring.
+## Accessibility and interaction
+
+- Large side panels retain their original touch regions even though icon artwork is radial.
+- Footer arrows have descriptive content labels and wrap through the enabled gauges.
+- The cockpit root publishes a changing content description with vehicle, trip, GPS, and Home Assistant state.
+- Configuration remains accessible on a scrollable settings screen.

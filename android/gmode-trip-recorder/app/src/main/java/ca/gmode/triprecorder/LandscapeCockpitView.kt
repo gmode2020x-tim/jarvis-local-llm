@@ -202,6 +202,15 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     internal fun activeSideButtons(): List<SideButtonConfig> = state.sideButtons
 
+    internal fun sideButtonIconCenter(slot: SideButtonSlot): Pair<Float, Float> = when (slot) {
+        SideButtonSlot.LEFT_TOP -> 398f to 155f
+        SideButtonSlot.LEFT_MIDDLE -> 368f to 276f
+        SideButtonSlot.LEFT_BOTTOM -> 398f to 397f
+        SideButtonSlot.RIGHT_TOP -> 897f to 155f
+        SideButtonSlot.RIGHT_MIDDLE -> 927f to 276f
+        SideButtonSlot.RIGHT_BOTTOM -> 897f to 397f
+    }
+
     internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel, state.offRoadSceneId)
 
     internal fun activeVehicleId(): String = state.vehicleId
@@ -1063,17 +1072,18 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private fun drawConfiguredSideButtons(canvas: Canvas) {
         val bySlot = state.sideButtons.associateBy { it.slot }
         val rows = listOf(
-            Triple(SideButtonSlot.LEFT_TOP, 155f, true),
-            Triple(SideButtonSlot.LEFT_MIDDLE, 276f, true),
-            Triple(SideButtonSlot.LEFT_BOTTOM, 397f, true),
-            Triple(SideButtonSlot.RIGHT_TOP, 155f, false),
-            Triple(SideButtonSlot.RIGHT_MIDDLE, 276f, false),
-            Triple(SideButtonSlot.RIGHT_BOTTOM, 397f, false),
+            SideButtonSlot.LEFT_TOP,
+            SideButtonSlot.LEFT_MIDDLE,
+            SideButtonSlot.LEFT_BOTTOM,
+            SideButtonSlot.RIGHT_TOP,
+            SideButtonSlot.RIGHT_MIDDLE,
+            SideButtonSlot.RIGHT_BOTTOM,
         )
-        rows.forEach { (slot, y, leftSide) ->
+        rows.forEach { slot ->
+            val (iconX, y) = sideButtonIconCenter(slot)
+            val leftSide = slot.name.startsWith("LEFT")
             val config = bySlot[slot] ?: SideButtonSettings.DEFAULTS.getValue(slot)
             val labelX = if (leftSide) 170f else 1110f
-            val iconX = if (leftSide) 383f else 912f
             drawFittedReferenceText(canvas, config.label.uppercase(), labelX, y + 9f, 178f)
             drawSideButtonIcon(canvas, config, iconX, y, 30f)
         }

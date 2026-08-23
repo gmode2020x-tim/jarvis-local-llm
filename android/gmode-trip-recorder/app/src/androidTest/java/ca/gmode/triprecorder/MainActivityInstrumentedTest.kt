@@ -19,6 +19,137 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityInstrumentedTest {
     @Test
+    fun playStoreScreenshotsRenderActualCockpitAtAcceptedResolution() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val outputDirectory = java.io.File(context.getExternalFilesDir(null), "play-store-screenshots").apply { mkdirs() }
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1920, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(1080, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1920, 1080)
+
+        val cases = listOf(
+            "01-attitude-dashboard.png" to CockpitState(
+                time = "2:21",
+                vehicleId = "sand_rail",
+                vehicleLabel = "Sand rail",
+                tripTypeLabel = "OFF ROAD",
+                offRoadSceneId = "sand",
+                recording = true,
+                automaticArmed = true,
+                wifiConnected = true,
+                networkConnected = true,
+                bluetoothEnabled = true,
+                gpsReady = true,
+                satelliteCount = 14,
+                batteryPercent = 76,
+                batteryCharging = true,
+                batteryTemperatureC = 29.0,
+                tripDurationLabel = "1:42",
+                tripLabel = "SAND TRAIL - 1:42 - 24.7 KM",
+                homeAssistantConnected = true,
+                pitchDegrees = 4.0,
+                rollDegrees = 7.0,
+                courseDegrees = 318.0,
+                courseSource = "GPS",
+                readings = listOf(CockpitReading("Attitude", "PITCH +4°   ROLL +7°", "", subtitle = "LIVE 3D - GPS COURSE 318°", gaugeId = "attitude")),
+            ),
+            "02-limit-warning.png" to CockpitState(
+                time = "2:22",
+                vehicleId = "sxs",
+                vehicleLabel = "SxS",
+                tripTypeLabel = "OFF ROAD",
+                recording = true,
+                networkConnected = true,
+                gpsReady = true,
+                satelliteCount = 11,
+                batteryPercent = 64,
+                batteryTemperatureC = 31.0,
+                tripDurationLabel = "0:38",
+                pitchDegrees = 34.0,
+                rollDegrees = -38.0,
+                courseDegrees = 86.0,
+                courseSource = "MAG",
+                readings = listOf(CockpitReading("Attitude", "PITCH +34°   ROLL -38°", "", subtitle = "LIMIT - RED BEZEL ALERT", gaugeId = "attitude")),
+            ),
+            "03-speed-street.png" to CockpitState(
+                time = "2:23",
+                vehicleId = "truck",
+                vehicleLabel = "Truck",
+                tripTypeLabel = "STREET",
+                recording = true,
+                wifiConnected = false,
+                networkConnected = true,
+                bluetoothEnabled = true,
+                gpsReady = true,
+                satelliteCount = 16,
+                batteryPercent = 61,
+                tripDurationLabel = "2:05",
+                readings = listOf(CockpitReading("Speed", "98", "km/h", 98.0 / 200.0, "GPS SPEED - STREET 0-200", gaugeId = "speed", numericValue = 98.0)),
+            ),
+            "04-water-course.png" to CockpitState(
+                time = "2:24",
+                vehicleId = "mini_jet_boat",
+                vehicleLabel = "Mini jet boat",
+                tripTypeLabel = "WATER",
+                recording = true,
+                networkConnected = true,
+                gpsReady = true,
+                satelliteCount = 12,
+                batteryPercent = 58,
+                tripDurationLabel = "0:56",
+                pitchDegrees = -3.0,
+                rollDegrees = 5.0,
+                courseDegrees = 42.0,
+                courseSource = "GPS",
+                readings = listOf(CockpitReading("Attitude", "PITCH -3°   ROLL +5°", "", subtitle = "WATER - GPS COURSE 042°", gaugeId = "attitude")),
+            ),
+        )
+
+        cases.forEach { (name, state) ->
+            cockpit.setState(state)
+            val bitmap = android.graphics.Bitmap.createBitmap(1920, 1080, android.graphics.Bitmap.Config.RGB_565)
+            val canvas = android.graphics.Canvas(bitmap)
+            repeat(24) { cockpit.draw(canvas) }
+            java.io.File(outputDirectory, name).outputStream().use {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
+        }
+        assertEquals(4, outputDirectory.listFiles { file -> file.extension == "png" }?.size)
+    }
+
+    @Test
+    fun sideButtonIconsFollowTheApprovedRadialArc() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        val expected = mapOf(
+            SideButtonSlot.LEFT_TOP to (398f to 155f),
+            SideButtonSlot.LEFT_MIDDLE to (368f to 276f),
+            SideButtonSlot.LEFT_BOTTOM to (398f to 397f),
+            SideButtonSlot.RIGHT_TOP to (897f to 155f),
+            SideButtonSlot.RIGHT_MIDDLE to (927f to 276f),
+            SideButtonSlot.RIGHT_BOTTOM to (897f to 397f),
+        )
+        expected.forEach { (slot, center) -> assertEquals(center, cockpit.sideButtonIconCenter(slot)) }
+        assertTrue(cockpit.sideButtonIconCenter(SideButtonSlot.LEFT_TOP).first > cockpit.sideButtonIconCenter(SideButtonSlot.LEFT_MIDDLE).first)
+        assertTrue(cockpit.sideButtonIconCenter(SideButtonSlot.RIGHT_TOP).first < cockpit.sideButtonIconCenter(SideButtonSlot.RIGHT_MIDDLE).first)
+    }
+
+    @Test
+    fun locationDisclosureExplainsBackgroundCollectionAndDestination() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val disclosure = context.getString(R.string.location_disclosure)
+        assertTrue(disclosure.contains("precise location data", ignoreCase = true))
+        assertTrue(disclosure.contains("automatically start or stop", ignoreCase = true))
+        assertTrue(disclosure.contains("closed or not in use", ignoreCase = true))
+        assertTrue(disclosure.contains("Home Assistant", ignoreCase = true))
+        assertTrue(disclosure.contains("no advertising", ignoreCase = true))
+        assertTrue(MainActivity.PRIVACY_POLICY_URL.startsWith("https://github.com/"))
+    }
+
+    @Test
     fun threeDChassisRollsInTheSameDirectionAsTheGaugeLine() {
         val renderer = Vehicle3DRenderer()
         val positive = renderer.projectedChassisAngleDegrees(17f)

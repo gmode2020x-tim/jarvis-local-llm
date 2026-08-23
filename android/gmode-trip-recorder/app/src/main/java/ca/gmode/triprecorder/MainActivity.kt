@@ -68,6 +68,7 @@ import ca.gmode.triprecorder.tracking.SensorCollector
 import ca.gmode.triprecorder.tracking.TrackingService
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -113,6 +114,7 @@ class MainActivity : AppCompatActivity() {
     private var showingSettings = false
     private var quickTripType = "off_road"
     private var requestedTripType: String? = null
+    private var pendingNotificationTripType: String? = null
     private var pendingExportTripId: String? = null
     private var pendingExportFormatId: String? = null
 
@@ -157,7 +159,7 @@ class MainActivity : AppCompatActivity() {
     ) { permissions ->
         val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (locationGranted && startAfterPermission) startRecording(requestedTripType)
+        if (locationGranted && startAfterPermission) startRecordingWithNotificationPermission(requestedTripType)
         if (locationGranted && captureHomeAfterPermission) captureHomeLocation()
         if (locationGranted && captureWifiAfterPermission) captureCurrentHomeWifi()
         if (locationGranted && saveAutoAfterPermission) saveAutoSettings()
@@ -166,6 +168,14 @@ class MainActivity : AppCompatActivity() {
         captureHomeAfterPermission = false
         captureWifiAfterPermission = false
         saveAutoAfterPermission = false
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        val tripType = pendingNotificationTripType
+        pendingNotificationTripType = null
+        startRecording(tripType)
     }
 
     private val exportFileLauncher = registerForActivityResult(
@@ -304,7 +314,7 @@ class MainActivity : AppCompatActivity() {
         when (action) {
             CockpitAction.START -> {
                 requestedTripType = quickTripType
-                if (hasFineLocation()) startRecording(quickTripType) else {
+                if (hasFineLocation()) startRecordingWithNotificationPermission(quickTripType) else {
                     startAfterPermission = true
                     requestForegroundLocationPermissions()
                 }
@@ -855,7 +865,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val battery = dashboardButton("S24 BATTERY SETTINGS", filled = false)
-        content.addView(card("SYSTEM", horizontalButtons(connectionToggle, battery), connectionBody))
+        val privacy = dashboardButton("PRIVACY + DATA USE", filled = false)
+        content.addView(card("SYSTEM", horizontalButtons(connectionToggle, battery), connectionBody, privacy))
         content.addView(
             text(
                 "GPS ${automaticConfig.locationIntervalSeconds} sec / ${automaticConfig.minimumDistanceMeters} m  •  BAROMETER  •  ACCELERATION  •  GYROSCOPE\nLocal-first recording; automatic Home Assistant retry.",
@@ -872,6 +883,7 @@ class MainActivity : AppCompatActivity() {
         battery.setOnClickListener {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
+        privacy.setOnClickListener { showPrivacyAndDataDialog() }
         useCurrentLocation.setOnClickListener {
             if (hasFineLocation()) {
                 captureHomeLocation()
@@ -974,7 +986,7 @@ class MainActivity : AppCompatActivity() {
     private fun bindActions() {
         startButton.setOnClickListener {
             if (hasFineLocation()) {
-                startRecording()
+                startRecordingWithNotificationPermission()
             } else {
                 startAfterPermission = true
                 requestForegroundLocationPermissions()
@@ -998,6 +1010,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun startRecordingWithNotificationPermission(requestedType: String? = null) {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingNotificationTripType = requestedType
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        startRecording(requestedType)
+    }
+
     private fun launchTripExport(trip: TripEntity, format: TripExportFormat) {
         pendingExportTripId = trip.id
         pendingExportFormatId = format.id
@@ -1017,13 +1042,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestForegroundLocationPermissions() {
-        val permissions = buildList {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
+        showLocationDisclosureIfNeeded {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+            )
         }
-        permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    private fun showLocationDisclosureIfNeeded(onContinue: () -> Unit) {
+        val preferences = getSharedPreferences(PRIVACY_PREFERENCES, MODE_PRIVATE)
+        if (preferences.getBoolean(KEY_LOCATION_DISCLOSURE_ACKNOWLEDGED, false)) {
+            onContinue()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Location data")
+            .setMessage(R.string.location_disclosure)
+            .setNegativeButton("NOT NOW", null)
+            .setNeutralButton("PRIVACY POLICY") { _, _ -> openPrivacyPolicy() }
+            .setPositiveButton("CONTINUE") { _, _ ->
+                preferences.edit().putBoolean(KEY_LOCATION_DISCLOSURE_ACKNOWLEDGED, true).apply()
+                onContinue()
+            }
+            .show()
+    }
+
+    private fun showPrivacyAndDataDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Privacy and data use")
+            .setMessage(R.string.privacy_summary)
+            .setNegativeButton("CLOSE", null)
+            .setPositiveButton("OPEN FULL POLICY") { _, _ -> openPrivacyPolicy() }
+            .show()
+    }
+
+    private fun openPrivacyPolicy() {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
     }
 
     @SuppressLint("MissingPermission")
@@ -1094,11 +1151,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openAppLocationSettings() {
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", packageName, null)
-            },
-        )
+        showLocationDisclosureIfNeeded {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                },
+            )
+        }
     }
 
     private fun refreshAutoUi() {
@@ -1778,6 +1837,10 @@ class MainActivity : AppCompatActivity() {
         private val TRIP_TYPE_VALUES = listOf("street", "off_road", "snow", "water")
         private const val STATE_EXPORT_TRIP_ID = "pending_export_trip_id"
         private const val STATE_EXPORT_FORMAT_ID = "pending_export_format_id"
+        private const val PRIVACY_PREFERENCES = "privacy_acknowledgements"
+        private const val KEY_LOCATION_DISCLOSURE_ACKNOWLEDGED = "location_disclosure_acknowledged"
+        internal const val PRIVACY_POLICY_URL =
+            "https://github.com/gmode2020x-tim/jarvis-local-llm/blob/main/android/gmode-trip-recorder/PRIVACY_POLICY.md"
     }
 
     private val BACKGROUND: Int get() = palette.background
