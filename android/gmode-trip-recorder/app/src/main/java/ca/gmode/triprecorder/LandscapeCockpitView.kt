@@ -224,7 +224,10 @@ class LandscapeCockpitView(context: Context) : View(context) {
         val cx = 640f
         val cy = 278f
         canvas.save()
-        canvas.clipCircle(cx, cy, 148f)
+        // Cover the complete inner aperture. The source dashboard center contains its original
+        // mountain/UTV scene, so a smaller clip allows that baked-in image to show around the
+        // live trip-type background.
+        canvas.clipCircle(cx, cy, 174f)
         canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
 
         val viewId = DashboardSettings.resolveVehicleView(
@@ -258,6 +261,32 @@ class LandscapeCockpitView(context: Context) : View(context) {
         }
         canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
         canvas.restore()
+        drawReferenceGaugeMarks(canvas)
+    }
+
+    private fun drawReferenceGaugeMarks(canvas: Canvas) {
+        listOf(
+            Triple("45°", 565f, 148f), Triple("45°", 715f, 148f),
+            Triple("15°", 505f, 205f), Triple("15°", 775f, 205f),
+            Triple("0°", 480f, 281f), Triple("0°", 800f, 281f),
+            Triple("-15°", 507f, 347f), Triple("-15°", 773f, 347f),
+            Triple("-45°", 559f, 397f), Triple("-45°", 721f, 397f),
+        ).forEach { (label, x, y) ->
+            drawReferenceText(canvas, label, x, y, 14f, Color.WHITE, true)
+        }
+
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.BUTT
+        repeat(13) { index ->
+            val x = 640f + (index - 6) * 5f
+            val height = if (index == 6) 11f else if (index % 3 == 0) 8f else 5f
+            paint.color = if (index == 6) palette.accent else Color.WHITE
+            paint.strokeWidth = if (index == 6) 2f else 1f
+            canvas.drawLine(x, 431f - height / 2f, x, 431f + height / 2f, paint)
+        }
+        paint.style = Paint.Style.FILL
+        drawReferenceText(canvas, "0°", 640f, 450f, 12f, Color.WHITE, true)
     }
 
     private fun tripTypeBackgroundResourceId(tripTypeLabel: String): Int = when (
