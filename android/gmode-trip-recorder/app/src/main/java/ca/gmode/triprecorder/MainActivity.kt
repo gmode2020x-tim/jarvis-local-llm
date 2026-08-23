@@ -83,7 +83,6 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
-import kotlin.math.abs
 
 private data class DashboardPhoneStatus(
     val wifiConnected: Boolean,
@@ -440,7 +439,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun placeholderReading(gaugeId: String): CockpitReading {
         val label = DashboardSettings.GAUGES.firstOrNull { it.id == gaugeId }?.label ?: gaugeId
-        return CockpitReading(label, "--", "waiting")
+        return CockpitReading(label, "--", "waiting", gaugeId = gaugeId)
     }
 
     @Suppress("DEPRECATION")
@@ -1368,9 +1367,10 @@ class MainActivity : AppCompatActivity() {
         telemetry: LiveTelemetry,
         duration: Duration,
     ) {
+        val tripType = active?.tripType ?: quickTripType
         cockpitGauges.forEach { (id, view) ->
             val reading = readingFor(id, active, telemetry, duration)
-            view.setReading(reading.title, reading.value, reading.unit, reading.progress, reading.subtitle)
+            view.setReading(reading, tripType)
         }
     }
 
@@ -1382,68 +1382,91 @@ class MainActivity : AppCompatActivity() {
     ): CockpitReading {
         val liveForTrip = active != null && telemetry.tripId == active.id
         val unavailable = if (active == null) "READY" else "WAITING"
+        val tripType = active?.tripType ?: quickTripType
+        fun reading(
+            gaugeId: String,
+            title: String,
+            text: String,
+            unit: String,
+            numericValue: Double?,
+            subtitle: String,
+            angle: Double? = null,
+        ) = CockpitReading(
+            title = title,
+            value = text,
+            unit = unit,
+            progress = GaugeScaleCatalog.progress(gaugeId, numericValue, tripType),
+            subtitle = subtitle,
+            angleDegrees = angle,
+            gaugeId = gaugeId,
+            numericValue = numericValue,
+        )
         return when (id) {
             "speed" -> {
                 val value = if (liveForTrip) telemetry.speedKph else active?.lastSpeedMps?.times(3.6)
-                CockpitReading("Speed", value?.roundToInt()?.toString() ?: "--", "km/h", value?.div(160.0), if (value == null) unavailable else "GPS SPEED")
+                reading(id, "Speed", value?.roundToInt()?.toString() ?: "--", "km/h", value, if (value == null) unavailable else "GPS SPEED")
             }
-            "trip_time" -> CockpitReading("Trip time", formatDuration(duration), "h:mm", duration.toMinutes().div(480.0), if (active == null) "READY" else "RECORDING")
+            "trip_time" -> reading(id, "Trip time", formatDuration(duration), "h:mm", duration.toMinutes().toDouble(), if (active == null) "READY" else "RECORDING")
             "distance" -> {
                 val value = active?.distanceMeters?.div(1000.0)
-                CockpitReading("Distance", value?.let { "%.1f".format(it) } ?: "--", "km", value?.div(200.0), if (value == null) unavailable else "TRIP")
+                reading(id, "Distance", value?.let { "%.1f".format(it) } ?: "--", "km", value, if (value == null) unavailable else "TRIP")
             }
             "altitude" -> {
                 val value = if (liveForTrip) telemetry.altitudeMeters else active?.lastAltitudeMeters
-                CockpitReading("Altitude", value?.roundToInt()?.toString() ?: "--", "m", value?.plus(100.0)?.div(2100.0), if (value == null) unavailable else "GPS")
+                reading(id, "GPS altitude", value?.roundToInt()?.toString() ?: "--", "m", value, if (value == null) unavailable else "WGS84")
             }
             "elevation_gain" -> {
                 val value = telemetry.elevationGainMeters.takeIf { liveForTrip }
-                CockpitReading("Elevation gain", value?.roundToInt()?.toString() ?: "--", "m", value?.div(1000.0), if (value == null) unavailable else "ASCENT")
+                reading(id, "Elevation gain", value?.roundToInt()?.toString() ?: "--", "m", value, if (value == null) unavailable else "ASCENT")
             }
             "compass" -> {
                 val value = telemetry.bearingDegrees.takeIf { liveForTrip }
-                CockpitReading("Compass", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value?.div(360.0), if (value == null) unavailable else "GPS HEADING", value)
+                reading(id, "GPS course", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value, if (value == null) unavailable else "COURSE OVER GROUND", value)
             }
-            "pitch" -> angleReading("Pitch", telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable)
+            "pitch" -> angleReading(id, "Pitch", telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable, tripType)
             "roll" -> angleReading(
+                id,
                 "Roll",
                 telemetry.rollDegrees?.let { GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees) },
                 unavailable,
+                tripType,
             )
             "g_force" -> {
                 val value = telemetry.accelerationPeakMs2?.div(9.80665)
-                CockpitReading("G-force", value?.let { "%.2f".format(it) } ?: "--", "g", value?.div(2.0), if (value == null) unavailable else "PEAK")
+                reading(id, "Shock peak", value?.let { "%.2f".format(it) } ?: "--", "g", value, if (value == null) unavailable else "LINEAR ACCELERATION")
             }
             "battery" -> {
                 val value = telemetry.batteryPercent
-                CockpitReading("Phone battery", value?.roundToInt()?.toString() ?: "--", "%", value?.div(100.0), if (value == null) unavailable else "S24")
+                reading(id, "Phone battery", value?.roundToInt()?.toString() ?: "--", "%", value, if (value == null) unavailable else "S24")
             }
             "gps_satellites" -> {
-                val value = telemetry.satelliteCount.takeIf { liveForTrip }
-                CockpitReading("GPS status", value?.toString() ?: "--", "satellites", value?.div(20.0), if (value == null) unavailable else "USED IN FIX")
+                val value = telemetry.satelliteCount.takeIf { liveForTrip }?.toDouble()
+                reading(id, "GPS satellites", value?.roundToInt()?.toString() ?: "--", "used in fix", value, if (value == null) unavailable else "GNSS")
             }
             "gps_accuracy" -> {
                 val value = telemetry.accuracyMeters.takeIf { liveForTrip } ?: active?.lastAccuracyMeters
-                CockpitReading("GPS accuracy", value?.roundToInt()?.toString() ?: "--", "± meters", value?.let { (1.0 - it / 100.0).coerceAtLeast(0.0) }, if (value != null) "FIX" else unavailable)
+                reading(id, "GPS accuracy", value?.roundToInt()?.toString() ?: "--", "± m", value, if (value != null) "FIX QUALITY" else unavailable)
             }
             "coordinates" -> {
                 val coordinate = if (liveForTrip && telemetry.latitude != null && telemetry.longitude != null) "%.4f  %.4f".format(telemetry.latitude, telemetry.longitude) else "--"
-                CockpitReading("Location", coordinate, "lat / lon", if (liveForTrip) 1.0 else null, if (liveForTrip) "GPS" else unavailable)
+                reading(id, "Coordinates", coordinate, "lat / lon", if (liveForTrip) 1.0 else null, if (liveForTrip) "GPS POSITION" else unavailable)
             }
             "pressure" -> {
                 val value = telemetry.pressureHpa
-                CockpitReading("Barometer", value?.let { "%.0f".format(it) } ?: "--", "hPa", value?.minus(850.0)?.div(250.0), if (value == null) unavailable else "S24 SENSOR")
+                reading(id, "Station pressure", value?.let { "%.0f".format(it) } ?: "--", "hPa", value, if (value == null) unavailable else "S24 BAROMETER")
             }
             else -> placeholderReading(id)
         }
     }
 
-    private fun angleReading(label: String, value: Double?, status: String): CockpitReading = CockpitReading(
+    private fun angleReading(id: String, label: String, value: Double?, status: String, tripType: String): CockpitReading = CockpitReading(
         label,
-        value?.let { "%+.0f".format(it) } ?: "--",
-        "degrees",
-        value?.let { abs(it) / 45.0 },
+        value?.let { "%+.0f°".format(it) } ?: "--",
+        "",
+        GaugeScaleCatalog.progress(id, value, tripType),
         if (value == null) status else "S24 ORIENTATION",
+        value,
+        id,
         value,
     )
 

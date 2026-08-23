@@ -153,17 +153,17 @@ class DashboardSettings(context: Context) {
             GaugeDefinition("speed", "Speed"),
             GaugeDefinition("trip_time", "Trip time"),
             GaugeDefinition("distance", "Distance"),
-            GaugeDefinition("altitude", "Altitude"),
+            GaugeDefinition("altitude", "GPS altitude"),
             GaugeDefinition("elevation_gain", "Elevation gain"),
-            GaugeDefinition("compass", "Compass / heading"),
+            GaugeDefinition("compass", "GPS course"),
             GaugeDefinition("pitch", "Pitch"),
             GaugeDefinition("roll", "Roll"),
-            GaugeDefinition("g_force", "G-force"),
+            GaugeDefinition("g_force", "Shock peak"),
             GaugeDefinition("battery", "Phone battery"),
             GaugeDefinition("gps_satellites", "GPS satellites"),
             GaugeDefinition("gps_accuracy", "GPS accuracy"),
             GaugeDefinition("coordinates", "Coordinates"),
-            GaugeDefinition("pressure", "Barometer"),
+            GaugeDefinition("pressure", "Station pressure"),
         )
 
         fun defaultGauges(vehicleId: String): List<String> = when (vehicleId) {

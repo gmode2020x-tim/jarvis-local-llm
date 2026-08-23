@@ -212,8 +212,8 @@ class MainActivityInstrumentedTest {
                     val cockpit = root.getChildAt(0) as LandscapeCockpitView
                     assertEquals(
                         listOf(
-                            "Speed", "Trip time", "Distance", "Altitude", "Elevation gain", "Compass", "Pitch",
-                            "Roll", "G-force", "Phone battery", "GPS status", "GPS accuracy", "Location", "Barometer",
+                            "Speed", "Trip time", "Distance", "GPS altitude", "Elevation gain", "GPS course", "Pitch",
+                            "Roll", "Shock peak", "Phone battery", "GPS satellites", "GPS accuracy", "Coordinates", "Station pressure",
                         ),
                         cockpit.activeGaugeTitles(),
                     )
@@ -245,6 +245,40 @@ class MainActivityInstrumentedTest {
         }
 
         assertEquals(readings.first().title, cockpit.activeGaugeTitle())
+    }
+
+    @Test
+    fun everyGaugeFaceRendersAtReferenceResolution() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        val samples = listOf(
+            CockpitReading("Speed", "58", "km/h", 58.0 / 120.0, "GPS SPEED", gaugeId = "speed", numericValue = 58.0),
+            CockpitReading("Trip time", "1:42", "h:mm", 42.0 / 60.0, "RECORDING", gaugeId = "trip_time", numericValue = 102.0),
+            CockpitReading("Distance", "42.7", "km", 42.7 / 50.0, "TRIP", gaugeId = "distance", numericValue = 42.7),
+            CockpitReading("GPS altitude", "543", "m", 0.58, "WGS84", gaugeId = "altitude", numericValue = 543.0),
+            CockpitReading("Elevation gain", "386", "m", 0.77, "ASCENT", gaugeId = "elevation_gain", numericValue = 386.0),
+            CockpitReading("GPS course", "NW", "315°", 315.0 / 360.0, "COURSE OVER GROUND", 315.0, "compass", 315.0),
+            CockpitReading("Pitch", "+12°", "", 0.63, "S24 ORIENTATION", 12.0, "pitch", 12.0),
+            CockpitReading("Roll", "-8°", "", 0.41, "S24 ORIENTATION", -8.0, "roll", -8.0),
+            CockpitReading("Shock peak", "1.25", "g", 0.42, "LINEAR ACCELERATION", gaugeId = "g_force", numericValue = 1.25),
+            CockpitReading("Phone battery", "74", "%", 0.74, "S24", gaugeId = "battery", numericValue = 74.0),
+            CockpitReading("GPS satellites", "12", "used in fix", 0.4, "GNSS", gaugeId = "gps_satellites", numericValue = 12.0),
+            CockpitReading("GPS accuracy", "7", "± m", 0.72, "FIX QUALITY", gaugeId = "gps_accuracy", numericValue = 7.0),
+            CockpitReading("Coordinates", "43.6532  -79.3832", "lat / lon", 1.0, "GPS POSITION", gaugeId = "coordinates", numericValue = 1.0),
+            CockpitReading("Station pressure", "1012", "hPa", 0.81, "S24 BAROMETER", gaugeId = "pressure", numericValue = 1012.0),
+        )
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        samples.forEach { sample ->
+            cockpit.setState(CockpitState(readings = listOf(sample)))
+            val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+            cockpit.draw(android.graphics.Canvas(bitmap))
+            assertTrue("${sample.title} face should draw an opaque centre", android.graphics.Color.alpha(bitmap.getPixel(640, 278)) > 0)
+            bitmap.recycle()
+        }
     }
 
     @Test

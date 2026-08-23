@@ -33,6 +33,8 @@ data class CockpitReading(
     val progress: Double? = null,
     val subtitle: String = "",
     val angleDegrees: Double? = null,
+    val gaugeId: String = "",
+    val numericValue: Double? = null,
 )
 
 data class CockpitState(
@@ -213,7 +215,13 @@ class LandscapeCockpitView(context: Context) : View(context) {
         drawDynamicGaugeScene(canvas, reading)
         drawReferenceText(canvas, state.time, 640f, 55f, 44f, Color.WHITE, true)
         drawReferenceText(canvas, reading.title.uppercase(), 640f, 136f, 18f, Color.WHITE, true)
-        drawReferenceText(canvas, reading.value, 640f, 402f, 38f, palette.accent, true)
+        val valueSize = when {
+            reading.gaugeId == "coordinates" -> 24f
+            reading.value.length > 10 -> 28f
+            else -> 38f
+        }
+        drawReferenceText(canvas, reading.value, 640f, 402f, valueSize, palette.accent, true)
+        if (reading.unit.isNotBlank()) drawReferenceText(canvas, reading.unit, 640f, 426f, 13f, Color.LTGRAY, false)
         drawReferenceText(canvas, reading.title, 640f, 536f, 24f, Color.WHITE, true)
         val detail = if (reading.subtitle.isNotBlank()) reading.subtitle else state.tripLabel
         drawReferenceText(canvas, detail, 640f, 565f, 18f, palette.accent, true)
@@ -226,58 +234,69 @@ class LandscapeCockpitView(context: Context) : View(context) {
     private fun drawDynamicGaugeScene(canvas: Canvas, reading: CockpitReading) {
         val cx = 640f
         val cy = 278f
+        val spec = GaugeScaleCatalog.forGauge(reading.gaugeId, reading.numericValue, state.tripTypeLabel)
+        val sceneGauge = reading.gaugeId in setOf("speed", "distance", "altitude", "elevation_gain", "compass", "pitch", "roll")
         canvas.save()
         // Cover the complete inner aperture. The source dashboard center contains its original
         // mountain/UTV scene, so a smaller clip allows that baked-in image to show around the
         // live trip-type background.
         canvas.clipCircle(cx, cy, 174f)
-        canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
-
-        val viewId = DashboardSettings.resolveVehicleView(
-            modeId = state.vehicleViewModeId,
-            gaugeTitle = reading.title,
-            pitchDegrees = state.pitchDegrees,
-            rollDegrees = state.rollDegrees,
-        )
-        val resourceId = vehicleResourceId(state.vehicleId, viewId)
-        val cacheKey = "${state.vehicleId}:$viewId"
-        val artwork = vehicleArtworkCache.getOrPut(cacheKey) {
-            val bitmap = BitmapFactory.decodeResource(resources, resourceId)
-            VehicleArtwork(bitmap, findOpaqueBounds(bitmap))
+        if (sceneGauge) {
+            canvas.drawBitmap(activeBackgroundBitmap(), null, RectF(347f, 40f, 932f, 430f), bitmapPaint)
+            val viewId = DashboardSettings.resolveVehicleView(
+                modeId = state.vehicleViewModeId,
+                gaugeTitle = reading.title,
+                pitchDegrees = state.pitchDegrees,
+                rollDegrees = state.rollDegrees,
+            )
+            val resourceId = vehicleResourceId(state.vehicleId, viewId)
+            val cacheKey = "${state.vehicleId}:$viewId"
+            val artwork = vehicleArtworkCache.getOrPut(cacheKey) {
+                val bitmap = BitmapFactory.decodeResource(resources, resourceId)
+                VehicleArtwork(bitmap, findOpaqueBounds(bitmap))
+            }
+            val bounds = artwork.contentBounds
+            val maxWidth = if (viewId == "side") 240f else 180f
+            val maxHeight = if (viewId == "side") 132f else 182f
+            val scale = min(maxWidth / bounds.width().coerceAtLeast(1), maxHeight / bounds.height().coerceAtLeast(1))
+            val targetWidth = bounds.width() * scale
+            val targetHeight = bounds.height() * scale
+            val targetCy = if (viewId == "side") 290f else 284f
+            val target = RectF(cx - targetWidth / 2f, targetCy - targetHeight / 2f, cx + targetWidth / 2f, targetCy + targetHeight / 2f)
+            val tilt = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
+            if (reading.gaugeId == "pitch" || reading.gaugeId == "roll") canvas.rotate(tilt, cx, targetCy)
+            canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
+        } else {
+            paint.style = Paint.Style.FILL
+            paint.shader = RadialGradient(cx, cy, 174f, intArrayOf(Color.parseColor("#151515"), Color.parseColor("#050505"), Color.BLACK), null, Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, 174f, paint)
+            paint.shader = null
         }
-        val bounds = artwork.contentBounds
-        val maxWidth = if (viewId == "side") 262f else 200f
-        val maxHeight = if (viewId == "side") 148f else 202f
-        val scale = min(maxWidth / bounds.width().coerceAtLeast(1), maxHeight / bounds.height().coerceAtLeast(1))
-        val targetWidth = bounds.width() * scale
-        val targetHeight = bounds.height() * scale
-        val targetCy = if (viewId == "side") 294f else 286f
-        val target = RectF(
-            cx - targetWidth / 2f,
-            targetCy - targetHeight / 2f,
-            cx + targetWidth / 2f,
-            targetCy + targetHeight / 2f,
-        )
-        val tilt = reading.angleDegrees?.coerceIn(-45.0, 45.0)?.toFloat() ?: 0f
-        if (reading.title.equals("pitch", ignoreCase = true) || reading.title.equals("roll", ignoreCase = true)) {
-            canvas.rotate(tilt * 0.55f, cx, targetCy)
-        }
-        canvas.drawBitmap(artwork.bitmap, bounds, target, bitmapPaint)
         canvas.restore()
-        drawReferenceGaugeMarks(canvas)
+        when (spec.faceStyle) {
+            GaugeFaceStyle.ATTITUDE_PITCH -> drawPitchGaugeMarks(canvas)
+            GaugeFaceStyle.ATTITUDE_ROLL -> drawRollGaugeMarks(canvas, spec)
+            GaugeFaceStyle.INFO -> drawCoordinateGrid(canvas)
+            else -> drawScaledGaugeMarks(canvas, reading, spec)
+        }
     }
 
-    private fun drawReferenceGaugeMarks(canvas: Canvas) {
+    private fun drawPitchGaugeMarks(canvas: Canvas) {
         listOf(
             Triple("45°", 565f, 148f), Triple("45°", 715f, 148f),
-            Triple("15°", 505f, 205f), Triple("15°", 775f, 205f),
+            Triple("30°", 530f, 173f), Triple("30°", 750f, 173f),
+            Triple("15°", 505f, 213f), Triple("15°", 775f, 213f),
             Triple("0°", 480f, 281f), Triple("0°", 800f, 281f),
-            Triple("-15°", 507f, 347f), Triple("-15°", 773f, 347f),
+            Triple("-15°", 507f, 342f), Triple("-15°", 773f, 342f),
+            Triple("-30°", 532f, 376f), Triple("-30°", 748f, 376f),
             Triple("-45°", 559f, 397f), Triple("-45°", 721f, 397f),
         ).forEach { (label, x, y) ->
             drawReferenceText(canvas, label, x, y, 14f, Color.WHITE, true)
         }
+        drawCalibrationStrip(canvas)
+    }
 
+    private fun drawCalibrationStrip(canvas: Canvas) {
         paint.shader = null
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.BUTT
@@ -290,6 +309,100 @@ class LandscapeCockpitView(context: Context) : View(context) {
         }
         paint.style = Paint.Style.FILL
         drawReferenceText(canvas, "0°", 640f, 450f, 12f, Color.WHITE, true)
+    }
+
+    private fun drawRollGaugeMarks(canvas: Canvas, spec: GaugeScaleSpec) {
+        val oval = RectF(488f, 126f, 792f, 430f)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 8f
+        paint.color = Color.argb(185, 255, 157, 0)
+        canvas.drawArc(oval, 225f, 15f, false, paint)
+        canvas.drawArc(oval, 300f, 15f, false, paint)
+        spec.majorTicks.forEach { tick ->
+            val angle = spec.startAngle + spec.progress(tick.value)!!.toFloat() * spec.sweepAngle
+            drawDialTick(canvas, 640f, 278f, 153f, angle, 15f, 3f, Color.WHITE)
+            val radians = Math.toRadians(angle.toDouble())
+            drawReferenceText(canvas, "${tick.label}°", 640f + cos(radians).toFloat() * 124f, 282f + sin(radians).toFloat() * 124f, 13f, Color.WHITE, true)
+        }
+        drawCalibrationStrip(canvas)
+    }
+
+    private fun drawScaledGaugeMarks(canvas: Canvas, reading: CockpitReading, spec: GaugeScaleSpec) {
+        val cx = 640f
+        val cy = 278f
+        val radius = 154f
+        val oval = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.BUTT
+        paint.strokeWidth = 7f
+        paint.color = Color.argb(180, 35, 35, 35)
+        canvas.drawArc(oval, spec.startAngle, spec.sweepAngle, false, paint)
+        spec.zones.forEach { zone ->
+            val start = spec.startAngle + spec.progress(zone.startValue)!!.toFloat() * spec.sweepAngle
+            val sweep = (spec.progress(zone.endValue)!! - spec.progress(zone.startValue)!!).toFloat() * spec.sweepAngle
+            paint.color = gaugeZoneColor(zone.role)
+            canvas.drawArc(oval, start, sweep, false, paint)
+        }
+        spec.minorStep?.let { step ->
+            var value = spec.minimum
+            while (value <= spec.maximum + step / 10.0) {
+                val angle = spec.startAngle + spec.progress(value)!!.toFloat() * spec.sweepAngle
+                drawDialTick(canvas, cx, cy, radius, angle, 7f, 1.5f, Color.LTGRAY)
+                value += step
+            }
+        }
+        spec.majorTicks.forEach { tick ->
+            val angle = spec.startAngle + spec.progress(tick.value)!!.toFloat() * spec.sweepAngle
+            drawDialTick(canvas, cx, cy, radius, angle, 17f, 3f, Color.WHITE)
+            val radians = Math.toRadians(angle.toDouble())
+            drawReferenceText(canvas, tick.label, cx + cos(radians).toFloat() * 123f, cy + sin(radians).toFloat() * 123f + 5f, if (spec.faceStyle == GaugeFaceStyle.COURSE) 14f else 12f, Color.WHITE, true)
+        }
+        reading.progress?.let { progress ->
+            val angle = spec.startAngle + progress.coerceIn(0.0, 1.0).toFloat() * spec.sweepAngle
+            val radians = Math.toRadians(angle.toDouble())
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = 4f
+            paint.color = palette.accent
+            canvas.drawLine(cx, cy, cx + cos(radians).toFloat() * 106f, cy + sin(radians).toFloat() * 106f, paint)
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(cx, cy, 8f, paint)
+        }
+    }
+
+    private fun drawDialTick(canvas: Canvas, cx: Float, cy: Float, radius: Float, angle: Float, length: Float, width: Float, color: Int) {
+        val radians = Math.toRadians(angle.toDouble())
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = width
+        paint.color = color
+        canvas.drawLine(
+            cx + cos(radians).toFloat() * (radius - length),
+            cy + sin(radians).toFloat() * (radius - length),
+            cx + cos(radians).toFloat() * radius,
+            cy + sin(radians).toFloat() * radius,
+            paint,
+        )
+    }
+
+    private fun drawCoordinateGrid(canvas: Canvas) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1f
+        paint.color = Color.argb(85, 255, 255, 255)
+        for (offset in -2..2) {
+            canvas.drawLine(520f, 278f + offset * 28f, 760f, 278f + offset * 28f, paint)
+            canvas.drawLine(640f + offset * 28f, 158f, 640f + offset * 28f, 398f, paint)
+        }
+        paint.color = palette.accent
+        paint.strokeWidth = 2f
+        canvas.drawCircle(640f, 278f, 8f, paint)
+        canvas.drawLine(640f, 252f, 640f, 304f, paint)
+        canvas.drawLine(614f, 278f, 666f, 278f, paint)
+    }
+
+    private fun gaugeZoneColor(role: GaugeZoneRole): Int = when (role) {
+        GaugeZoneRole.DANGER -> Color.parseColor("#E5091B")
+        GaugeZoneRole.CAUTION -> Color.parseColor("#FF9D00")
+        GaugeZoneRole.GOOD -> Color.parseColor("#20B94B")
     }
 
     private fun tripTypeBackgroundResourceId(tripTypeLabel: String, offRoadSceneId: String): Int = when (
