@@ -1,2 +1,3 @@
 158a742cb609282daff82be7a367f631743672655d22ce8918e647e3432a9dab  GMODE-Trip-Recorder-v2.0.0-sideload.apk
 ee770574e8097262a175fec8277a9b4f45df8173b849285826112d9591b524a8  GMODE-Trip-Recorder-v2.0.0-play.aab
+4a9bdaa2bee74eb48a1539e5eff2e75ada14be488048349f57392c093d7e57ee  GMODE-Trip-Recorder-v2.0.0-install.zip

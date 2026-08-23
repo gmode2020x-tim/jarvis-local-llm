@@ -16,6 +16,28 @@ Use only voices, recordings, and automation targets that you own or have permiss
 
 ![Jarvis architecture](docs/assets/architecture.svg)
 
+## Install GMODE Trip Recorder 2.0 on Android
+
+The recommended phone download is the release ZIP. It contains the signed sideload APK, SHA-256 checksums, the complete installation guide, and screenshots.
+
+- [Download GMODE Trip Recorder v2.0.0 ZIP](https://github.com/gmode2020x-tim/jarvis-local-llm/releases/download/v2.0.0/GMODE-Trip-Recorder-v2.0.0-install.zip)
+- [Download the APK only](https://github.com/gmode2020x-tim/jarvis-local-llm/releases/download/v2.0.0/GMODE-Trip-Recorder-v2.0.0-sideload.apk)
+- [Open the v2.0.0 release page](https://github.com/gmode2020x-tim/jarvis-local-llm/releases/tag/v2.0.0)
+- [Read the complete illustrated installation and troubleshooting guide](android/gmode-trip-recorder/README.md#install-on-a-samsung-galaxy-s24)
+
+On a Samsung phone:
+
+1. Download the ZIP, then open **My Files > Downloads** and extract it.
+2. Tap `GMODE-Trip-Recorder-v2.0.0-sideload.apk`.
+3. If Android blocks the installer, tap **Settings** and enable **Allow from this source** for My Files or the browser that opened it.
+4. Tap **Install**, or **Update** if GMODE is already installed. Updating retains its local trips and settings; uninstalling first removes app-private data.
+5. Open GMODE, press **Start**, enable precise location, and allow notifications.
+6. For automatic departure recording, grant **Allow all the time** location access, set GMODE battery use to **Unrestricted**, and remove it from Samsung sleeping/deep-sleeping app lists.
+
+Do not install the `.aab` file on a phone; it is only for Google Play Console.
+
+![GMODE Trip Recorder v2 cockpit](android/gmode-trip-recorder/play-store/screenshots/01-attitude-dashboard.png)
+
 ## Quick Start
 
 Windows PowerShell:

@@ -49,6 +49,7 @@ android/**/build/
 android/**/app/build/
 *.apk
 *.aab
+android/gmode-trip-recorder/releases/*-install.zip
 *.jks
 *.keystore
 android/**/keystore.properties
