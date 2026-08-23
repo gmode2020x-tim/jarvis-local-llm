@@ -13,11 +13,14 @@ data class GaugeDefinition(val id: String, val label: String)
 
 data class VehicleViewOption(val id: String, val label: String)
 
+data class GaugeSceneOption(val id: String, val label: String)
+
 data class DashboardConfig(
     val vehicleId: String = DashboardSettings.DEFAULT_VEHICLE_ID,
     val streetVehicleId: String = DashboardSettings.DEFAULT_STREET_VEHICLE_ID,
     val snowVehicleId: String = DashboardSettings.DEFAULT_SNOW_VEHICLE_ID,
     val waterVehicleId: String = DashboardSettings.DEFAULT_WATER_VEHICLE_ID,
+    val offRoadSceneId: String = DashboardSettings.DEFAULT_OFF_ROAD_SCENE_ID,
     val gaugeIds: List<String> = DashboardSettings.defaultGauges(DashboardSettings.DEFAULT_VEHICLE_ID),
     val pitchOffsetDegrees: Double = 0.0,
     val rollOffsetDegrees: Double = 0.0,
@@ -35,6 +38,8 @@ data class DashboardConfig(
             streetVehicleId = streetVehicle,
             snowVehicleId = snowVehicle,
             waterVehicleId = waterVehicle,
+            offRoadSceneId = offRoadSceneId.takeIf { id -> DashboardSettings.OFF_ROAD_SCENES.any { it.id == id } }
+                ?: DashboardSettings.DEFAULT_OFF_ROAD_SCENE_ID,
             gaugeIds = ordered.ifEmpty { DashboardSettings.defaultGauges(offRoadVehicle) },
             pitchOffsetDegrees = pitchOffsetDegrees.takeIf { it.isFinite() }?.coerceIn(-180.0, 180.0) ?: 0.0,
             rollOffsetDegrees = rollOffsetDegrees.takeIf { it.isFinite() }?.coerceIn(-180.0, 180.0) ?: 0.0,
@@ -65,6 +70,8 @@ class DashboardSettings(context: Context) {
             streetVehicleId = selectedVehicle(KEY_STREET_VEHICLE, "street"),
             snowVehicleId = selectedVehicle(KEY_SNOW_VEHICLE, "snow"),
             waterVehicleId = selectedVehicle(KEY_WATER_VEHICLE, "water"),
+            offRoadSceneId = preferences.getString(KEY_OFF_ROAD_SCENE, DEFAULT_OFF_ROAD_SCENE_ID)
+                ?: DEFAULT_OFF_ROAD_SCENE_ID,
             gaugeIds = preferences.getString(KEY_GAUGES, null)?.split(',')?.filter { it.isNotBlank() }
                 ?: defaultGauges(DEFAULT_VEHICLE_ID),
             pitchOffsetDegrees = preferences.getString(KEY_PITCH_OFFSET, null)?.toDoubleOrNull() ?: 0.0,
@@ -81,6 +88,7 @@ class DashboardSettings(context: Context) {
             .putString(KEY_STREET_VEHICLE, normalized.streetVehicleId)
             .putString(KEY_SNOW_VEHICLE, normalized.snowVehicleId)
             .putString(KEY_WATER_VEHICLE, normalized.waterVehicleId)
+            .putString(KEY_OFF_ROAD_SCENE, normalized.offRoadSceneId)
             .putString(KEY_GAUGES, normalized.gaugeIds.joinToString(","))
             .putString(KEY_PITCH_OFFSET, normalized.pitchOffsetDegrees.toString())
             .putString(KEY_ROLL_OFFSET, normalized.rollOffsetDegrees.toString())
@@ -94,6 +102,7 @@ class DashboardSettings(context: Context) {
         const val DEFAULT_STREET_VEHICLE_ID = "car"
         const val DEFAULT_SNOW_VEHICLE_ID = "snowmobile"
         const val DEFAULT_WATER_VEHICLE_ID = "boat"
+        const val DEFAULT_OFF_ROAD_SCENE_ID = "dirt"
         const val DEFAULT_VIEW_MODE_ID = "auto"
         const val AUTOMATIC_ROLL_VIEW_ID = "rear"
         const val MAX_GAUGES = 2
@@ -110,6 +119,9 @@ class DashboardSettings(context: Context) {
             VehicleProfile("sxs", "SxS / side-by-side", setOf("off_road")),
             VehicleProfile("quad", "Quad ATV", setOf("off_road")),
             VehicleProfile("three_wheeler", "Three-wheeler", setOf("off_road")),
+            VehicleProfile("sand_rail", "Sand rail", setOf("off_road")),
+            VehicleProfile("trophy_truck", "Trophy truck", setOf("off_road")),
+            VehicleProfile("unicycle", "Extreme unicycle — funny", setOf("off_road"), funny = true),
             VehicleProfile("truck", "Truck / 4x4", setOf("street", "off_road")),
             VehicleProfile("car", "Car", setOf("street")),
             VehicleProfile("street_motorcycle", "Street motorcycle", setOf("street")),
@@ -122,6 +134,12 @@ class DashboardSettings(context: Context) {
             VehicleProfile("seadoo", "Sea-Doo / personal watercraft", setOf("water")),
             VehicleProfile("hovercraft", "Hovercraft", setOf("water")),
             VehicleProfile("kayak", "Kayak", setOf("water")),
+            VehicleProfile("mini_jet_boat", "Mini jet boat", setOf("water")),
+        )
+
+        val OFF_ROAD_SCENES = listOf(
+            GaugeSceneOption("dirt", "Dirt / rocky terrain"),
+            GaugeSceneOption("sand", "Sand dunes"),
         )
 
         val VIEW_MODES = listOf(
@@ -151,10 +169,10 @@ class DashboardSettings(context: Context) {
         )
 
         fun defaultGauges(vehicleId: String): List<String> = when (vehicleId) {
-            "boat", "seadoo", "hovercraft", "kayak" -> listOf("speed", "compass")
+            "boat", "seadoo", "hovercraft", "kayak", "mini_jet_boat" -> listOf("speed", "compass")
             "snowmobile", "snowcat", "tracked_utv" -> listOf("speed", "compass")
             "dirt_bike", "street_motorcycle", "snow_bike" -> listOf("speed", "roll")
-            "car", "truck", "clown_car" -> listOf("speed", "compass")
+            "car", "truck", "clown_car", "sand_rail", "trophy_truck" -> listOf("speed", "compass")
             else -> listOf("pitch", "roll")
         }
 
@@ -163,7 +181,7 @@ class DashboardSettings(context: Context) {
         ) {
             "car", "street_motorcycle", "clown_car" -> "street"
             "snowmobile", "snow_bike", "snowcat", "tracked_utv" -> "snow"
-            "boat", "seadoo", "hovercraft", "kayak" -> "water"
+            "boat", "seadoo", "hovercraft", "kayak", "mini_jet_boat" -> "water"
             else -> "off_road"
         }
 
@@ -214,6 +232,7 @@ class DashboardSettings(context: Context) {
         private const val KEY_STREET_VEHICLE = "street_vehicle_id"
         private const val KEY_SNOW_VEHICLE = "snow_vehicle_id"
         private const val KEY_WATER_VEHICLE = "water_vehicle_id"
+        private const val KEY_OFF_ROAD_SCENE = "off_road_scene_id"
         private const val KEY_GAUGES = "gauge_ids"
         private const val KEY_PITCH_OFFSET = "pitch_offset_degrees"
         private const val KEY_ROLL_OFFSET = "roll_offset_degrees"

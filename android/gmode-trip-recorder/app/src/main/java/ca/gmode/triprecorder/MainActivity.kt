@@ -269,6 +269,7 @@ class MainActivity : AppCompatActivity() {
                     vehicleId = vehicle.id,
                     vehicleLabel = vehicle.label,
                     tripTypeLabel = tripTypeLabel(quickTripType),
+                    offRoadSceneId = dashboardConfig.offRoadSceneId,
                     automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                     readings = dashboardConfig.gaugeIds.map { placeholderReading(it) },
                     sideButtons = sideButtonConfig,
@@ -768,6 +769,11 @@ class MainActivity : AppCompatActivity() {
         val offRoadVehicleSpinner = categoryVehicleSpinner(offRoadVehicles, dashboardConfig.vehicleId)
         val snowVehicleSpinner = categoryVehicleSpinner(snowVehicles, dashboardConfig.snowVehicleId)
         val waterVehicleSpinner = categoryVehicleSpinner(waterVehicles, dashboardConfig.waterVehicleId)
+        val offRoadSceneSpinner = Spinner(this).apply {
+            adapter = labelAdapter(DashboardSettings.OFF_ROAD_SCENES.map { it.label })
+            backgroundTintList = ColorStateList.valueOf(ORANGE)
+            setSelection(DashboardSettings.OFF_ROAD_SCENES.indexOfFirst { it.id == dashboardConfig.offRoadSceneId }.coerceAtLeast(0))
+        }
         val vehicleViewSpinner = Spinner(this).apply {
             adapter = labelAdapter(DashboardSettings.VIEW_MODES.map { it.label })
             backgroundTintList = ColorStateList.valueOf(ORANGE)
@@ -796,6 +802,7 @@ class MainActivity : AppCompatActivity() {
                 text("Choose the vehicle displayed for each trip type. Changing the trip type automatically switches both the scene and vehicle.", 11f, MUTED),
                 labeledInput("STREET VEHICLE", streetVehicleSpinner),
                 labeledInput("OFF ROAD VEHICLE", offRoadVehicleSpinner),
+                labeledInput("OFF ROAD SCENE", offRoadSceneSpinner),
                 labeledInput("SNOW VEHICLE", snowVehicleSpinner),
                 labeledInput("WATER VEHICLE", waterVehicleSpinner),
                 labeledInput("VEHICLE VIEW", vehicleViewSpinner),
@@ -878,6 +885,7 @@ class MainActivity : AppCompatActivity() {
                     streetVehicleId = streetVehicle.id,
                     snowVehicleId = snowVehicle.id,
                     waterVehicleId = waterVehicle.id,
+                    offRoadSceneId = DashboardSettings.OFF_ROAD_SCENES[offRoadSceneSpinner.selectedItemPosition].id,
                     gaugeIds = selected,
                     pitchOffsetDegrees = dashboardConfig.pitchOffsetDegrees,
                     rollOffsetDegrees = dashboardConfig.rollOffsetDegrees,
@@ -1235,6 +1243,7 @@ class MainActivity : AppCompatActivity() {
                             vehicleId = vehicle.id,
                             vehicleLabel = vehicle.label,
                             tripTypeLabel = tripTypeLabel(currentTripType),
+                            offRoadSceneId = dashboardConfig.offRoadSceneId,
                             recording = active != null,
                             automaticArmed = autoSettings.read().enabled && autoManager.hasBackgroundLocation(),
                             gpsLabel = gpsLabel,

@@ -58,6 +58,23 @@ class DashboardSettingsTest {
             assertTrue("$tripType needs at least four vehicles", DashboardSettings.vehiclesForTripType(tripType).size >= 4)
         }
         assertTrue(DashboardSettings.VEHICLES.any { it.funny })
+        assertTrue(DashboardSettings.vehiclesForTripType("off_road").size >= 8)
+        assertTrue(DashboardSettings.vehiclesForTripType("water").size >= 5)
+    }
+
+    @Test
+    fun sandSceneAndNewVehiclesNormalizeInTheirCategories() {
+        val config = DashboardConfig(
+            vehicleId = "sand_rail",
+            waterVehicleId = "mini_jet_boat",
+            offRoadSceneId = "sand",
+        ).normalized()
+
+        assertEquals("sand_rail", config.vehicleId)
+        assertEquals("mini_jet_boat", config.waterVehicleId)
+        assertEquals("sand", config.offRoadSceneId)
+        assertEquals("dirt", DashboardConfig(offRoadSceneId = "moon").normalized().offRoadSceneId)
+        assertTrue(DashboardSettings.vehicle("unicycle").funny)
     }
 
     @Test

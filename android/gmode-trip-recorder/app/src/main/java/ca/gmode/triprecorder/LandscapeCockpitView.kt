@@ -40,6 +40,7 @@ data class CockpitState(
     val vehicleId: String = "atv_utv",
     val vehicleLabel: String = "ATV / UTV",
     val tripTypeLabel: String = "OFF ROAD",
+    val offRoadSceneId: String = DashboardSettings.DEFAULT_OFF_ROAD_SCENE_ID,
     val recording: Boolean = false,
     val automaticArmed: Boolean = false,
     val gpsLabel: String = "GPS STANDBY",
@@ -142,7 +143,7 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     internal fun activeSideButtons(): List<SideButtonConfig> = state.sideButtons
 
-    internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel)
+    internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel, state.offRoadSceneId)
 
     internal fun activeVehicleId(): String = state.vehicleId
 
@@ -289,13 +290,13 @@ class LandscapeCockpitView(context: Context) : View(context) {
         drawReferenceText(canvas, "0°", 640f, 450f, 12f, Color.WHITE, true)
     }
 
-    private fun tripTypeBackgroundResourceId(tripTypeLabel: String): Int = when (
+    private fun tripTypeBackgroundResourceId(tripTypeLabel: String, offRoadSceneId: String): Int = when (
         tripTypeLabel.trim().lowercase().replace('-', '_').replace(' ', '_')
     ) {
         "street" -> R.drawable.dial_street_landscape
         "snow" -> R.drawable.dial_snow_landscape
         "water" -> R.drawable.dial_water_landscape
-        else -> R.drawable.dial_offroad_landscape
+        else -> if (offRoadSceneId == "sand") R.drawable.dial_sand_landscape else R.drawable.dial_offroad_landscape
     }
 
     private fun activeBackgroundBitmap(): Bitmap {
@@ -345,6 +346,21 @@ class LandscapeCockpitView(context: Context) : View(context) {
             "front" -> R.drawable.vehicle_three_wheeler_front
             "rear" -> R.drawable.vehicle_three_wheeler_rear
             else -> R.drawable.vehicle_three_wheeler_side
+        }
+        "sand_rail" -> when (viewId) {
+            "front" -> R.drawable.vehicle_sand_rail_front
+            "rear" -> R.drawable.vehicle_sand_rail_rear
+            else -> R.drawable.vehicle_sand_rail_side
+        }
+        "trophy_truck" -> when (viewId) {
+            "front" -> R.drawable.vehicle_trophy_truck_front
+            "rear" -> R.drawable.vehicle_trophy_truck_rear
+            else -> R.drawable.vehicle_trophy_truck_side
+        }
+        "unicycle" -> when (viewId) {
+            "front" -> R.drawable.vehicle_unicycle_front
+            "rear" -> R.drawable.vehicle_unicycle_rear
+            else -> R.drawable.vehicle_unicycle_side
         }
         "truck" -> when (viewId) {
             "front" -> R.drawable.vehicle_truck_front
@@ -400,6 +416,11 @@ class LandscapeCockpitView(context: Context) : View(context) {
             "front" -> R.drawable.vehicle_kayak_front
             "rear" -> R.drawable.vehicle_kayak_rear
             else -> R.drawable.vehicle_kayak_side
+        }
+        "mini_jet_boat" -> when (viewId) {
+            "front" -> R.drawable.vehicle_mini_jet_boat_front
+            "rear" -> R.drawable.vehicle_mini_jet_boat_rear
+            else -> R.drawable.vehicle_mini_jet_boat_side
         }
         else -> when (viewId) {
             "front" -> R.drawable.vehicle_sxs_front

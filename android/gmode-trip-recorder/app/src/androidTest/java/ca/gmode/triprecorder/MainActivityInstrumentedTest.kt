@@ -51,6 +51,45 @@ class MainActivityInstrumentedTest {
             assertEquals(512, bitmap.width)
             assertEquals(512, bitmap.height)
             assertTrue(bitmap.hasAlpha())
+            assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(0, 0)))
+        }
+    }
+
+    @Test
+    fun newVehicleViewsDoNotContainABakedCheckerboard() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        val resources = listOf("sand_rail", "trophy_truck", "unicycle", "mini_jet_boat")
+            .flatMap { vehicleId ->
+                listOf("side", "front", "rear").map { view ->
+                    cockpit.vehicleResourceId(vehicleId, view)
+                }
+            }
+
+        resources.forEach { resourceId ->
+            val bitmap = BitmapFactory.decodeResource(context.resources, resourceId)
+            var transparentPixels = 0
+            var brightNeutralPixels = 0
+            for (y in 0 until bitmap.height) {
+                for (x in 0 until bitmap.width) {
+                    val color = bitmap.getPixel(x, y)
+                    if (android.graphics.Color.alpha(color) == 0) {
+                        transparentPixels++
+                    } else {
+                        val red = android.graphics.Color.red(color)
+                        val green = android.graphics.Color.green(color)
+                        val blue = android.graphics.Color.blue(color)
+                        val spread = maxOf(red, green, blue) - minOf(red, green, blue)
+                        if (minOf(red, green, blue) >= 210 && spread <= 24) {
+                            brightNeutralPixels++
+                        }
+                    }
+                }
+            }
+
+            val pixelCount = bitmap.width * bitmap.height
+            assertTrue(transparentPixels > pixelCount / 2)
+            assertTrue(brightNeutralPixels < pixelCount / 4)
         }
     }
 
@@ -63,12 +102,19 @@ class MainActivityInstrumentedTest {
             Triple("SNOW", "snowmobile", R.drawable.dial_snow_landscape),
             Triple("WATER", "boat", R.drawable.dial_water_landscape),
             Triple("WATER", "seadoo", R.drawable.dial_water_landscape),
+            Triple("OFF ROAD", "sand_rail", R.drawable.dial_sand_landscape),
         )
         val expectedDimensions = 768 to 512
         val cockpit = LandscapeCockpitView(context)
 
         expectedBackgrounds.forEach { (tripType, vehicleId, resourceId) ->
-            cockpit.setState(CockpitState(tripTypeLabel = tripType, vehicleId = vehicleId))
+            cockpit.setState(
+                CockpitState(
+                    tripTypeLabel = tripType,
+                    vehicleId = vehicleId,
+                    offRoadSceneId = if (resourceId == R.drawable.dial_sand_landscape) "sand" else "dirt",
+                ),
+            )
             assertEquals(resourceId, cockpit.activeBackgroundResourceId())
             BitmapFactory.decodeResource(context.resources, resourceId).also { bitmap ->
                 assertEquals(expectedDimensions.first, bitmap.width)
@@ -96,6 +142,10 @@ class MainActivityInstrumentedTest {
             "seadoo" to "water",
             "hovercraft" to "water",
             "kayak" to "water",
+            "sand_rail" to "off_road",
+            "trophy_truck" to "off_road",
+            "unicycle" to "off_road",
+            "mini_jet_boat" to "water",
         )
 
         DashboardSettings.VEHICLES.forEach { vehicle ->
@@ -140,6 +190,7 @@ class MainActivityInstrumentedTest {
                 assertTrue(labels.any { it.contains("Hybrid mode uses both signals") })
                 assertTrue(labels.any { it == "STREET VEHICLE" })
                 assertTrue(labels.any { it == "OFF ROAD VEHICLE" })
+                assertTrue(labels.any { it == "OFF ROAD SCENE" })
                 assertTrue(labels.any { it == "SNOW VEHICLE" })
                 assertTrue(labels.any { it == "WATER VEHICLE" })
                 assertTrue(labels.none { it.contains("ROLL PERSPECTIVE") })
@@ -177,6 +228,7 @@ class MainActivityInstrumentedTest {
                 streetVehicleId = "clown_car",
                 snowVehicleId = "tracked_utv",
                 waterVehicleId = "hovercraft",
+                offRoadSceneId = "sand",
             ),
         )
         try {
@@ -192,7 +244,7 @@ class MainActivityInstrumentedTest {
                     android.os.SystemClock.sleep(1_200)
                 }
 
-                assertVehicleAndCycle("quad", R.drawable.dial_offroad_landscape)
+                assertVehicleAndCycle("quad", R.drawable.dial_sand_landscape)
                 assertVehicleAndCycle("tracked_utv", R.drawable.dial_snow_landscape)
                 assertVehicleAndCycle("hovercraft", R.drawable.dial_water_landscape)
                 assertVehicleAndCycle("clown_car", R.drawable.dial_street_landscape)
