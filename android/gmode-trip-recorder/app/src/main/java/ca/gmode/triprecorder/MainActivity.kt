@@ -60,6 +60,7 @@ import ca.gmode.triprecorder.settings.SideButtonTarget
 import ca.gmode.triprecorder.sync.SyncScheduler
 import ca.gmode.triprecorder.sync.SyncStatusStore
 import ca.gmode.triprecorder.tracking.DashboardTelemetry
+import ca.gmode.triprecorder.tracking.GaugeDisplayMath
 import ca.gmode.triprecorder.tracking.LevelCalibration
 import ca.gmode.triprecorder.tracking.LiveTelemetry
 import ca.gmode.triprecorder.tracking.LiveTelemetryStore
@@ -806,7 +807,7 @@ class MainActivity : AppCompatActivity() {
                 labeledInput("SNOW VEHICLE", snowVehicleSpinner),
                 labeledInput("WATER VEHICLE", waterVehicleSpinner),
                 labeledInput("VEHICLE VIEW", vehicleViewSpinner),
-                text("Mount the S24 in landscape with the back of the phone facing forward. Automatic view shows the vehicle side for pitch and rear for roll. Choose a fixed view to override it. Select exactly two gauges and switch between them with the cockpit arrows.", 11f, MUTED),
+                text("Mount the S24 in landscape with the back of the phone facing forward. Automatic view shows the vehicle side for pitch and rear for roll. Choose a fixed view to override it. Enable any number of gauges, arrange their order, and cycle through them with the cockpit arrows.", 11f, MUTED),
                 gaugeRows,
                 horizontalButtons(saveCockpit, vehicleDefaults),
                 text("LEVEL CALIBRATION: Park on flat ground, stop completely, leave the phone in its normal mount, then press the button and release the phone. Calibration is rejected if the S24 detects movement.", 11f, MUTED),
@@ -870,9 +871,9 @@ class MainActivity : AppCompatActivity() {
         saveTheme.setOnClickListener { saveAppearance(usePresetAccent = false) }
         usePresetColor.setOnClickListener { saveAppearance(usePresetAccent = true) }
         saveCockpit.setOnClickListener {
-            val selected = gaugeOrder.filter { it in selectedGaugeIds }.take(DashboardSettings.MAX_GAUGES)
-            if (selected.size != 2) {
-                Toast.makeText(this, "Choose exactly two main gauges", Toast.LENGTH_LONG).show()
+            val selected = gaugeOrder.filter { it in selectedGaugeIds }
+            if (selected.isEmpty()) {
+                Toast.makeText(this, "Choose at least one gauge", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
             val streetVehicle = streetVehicles[streetVehicleSpinner.selectedItemPosition]
@@ -1314,12 +1315,7 @@ class MainActivity : AppCompatActivity() {
                 trackTintList = checkedStateList(palette.activeSurface, Color.parseColor("#333333"))
                 setOnCheckedChangeListener { _, checked ->
                     if (checked) {
-                        if (selected.size >= DashboardSettings.MAX_GAUGES) {
-                            isChecked = false
-                            Toast.makeText(this@MainActivity, "Choose up to ${DashboardSettings.MAX_GAUGES} gauges", Toast.LENGTH_SHORT).show()
-                        } else {
-                            selected.add(gaugeId)
-                        }
+                        selected.add(gaugeId)
                     } else {
                         selected.remove(gaugeId)
                     }
@@ -1409,7 +1405,11 @@ class MainActivity : AppCompatActivity() {
                 CockpitReading("Compass", value?.let(::cardinalDirection) ?: "--", value?.let { "${it.roundToInt()}°" } ?: "degrees", value?.div(360.0), if (value == null) unavailable else "GPS HEADING", value)
             }
             "pitch" -> angleReading("Pitch", telemetry.pitchDegrees?.let { normalizeAngle(it - dashboardConfig.pitchOffsetDegrees) }, unavailable)
-            "roll" -> angleReading("Roll", telemetry.rollDegrees?.let { normalizeAngle(it - dashboardConfig.rollOffsetDegrees) }, unavailable)
+            "roll" -> angleReading(
+                "Roll",
+                telemetry.rollDegrees?.let { GaugeDisplayMath.mirroredRollDegrees(it, dashboardConfig.rollOffsetDegrees) },
+                unavailable,
+            )
             "g_force" -> {
                 val value = telemetry.accelerationPeakMs2?.div(9.80665)
                 CockpitReading("G-force", value?.let { "%.2f".format(it) } ?: "--", "g", value?.div(2.0), if (value == null) unavailable else "PEAK")

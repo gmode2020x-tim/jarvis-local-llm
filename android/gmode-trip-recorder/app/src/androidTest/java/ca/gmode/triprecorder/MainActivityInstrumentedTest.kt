@@ -199,22 +199,52 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun configuredGaugeOrderBecomesLeftAndRightMainInstruments() {
+    fun configuredGaugeOrderPreservesEverySelectedInstrument() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val settings = DashboardSettings(context)
         val original = settings.read()
-        settings.save(DashboardConfig(vehicleId = "truck", gaugeIds = listOf("speed", "compass")))
+        val selected = DashboardSettings.GAUGES.map { it.id }
+        settings.save(DashboardConfig(vehicleId = "truck", gaugeIds = selected))
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
                     val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
                     val cockpit = root.getChildAt(0) as LandscapeCockpitView
-                    assertEquals(listOf("Speed", "Compass"), cockpit.activeGaugeTitles())
+                    assertEquals(
+                        listOf(
+                            "Speed", "Trip time", "Distance", "Altitude", "Elevation gain", "Compass", "Pitch",
+                            "Roll", "G-force", "Phone battery", "GPS status", "GPS accuracy", "Location", "Barometer",
+                        ),
+                        cockpit.activeGaugeTitles(),
+                    )
                 }
             }
         } finally {
             settings.save(original)
         }
+    }
+
+    @Test
+    fun footerArrowCyclesThroughAllGaugesAndWrapsToTheFirst() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        val readings = DashboardSettings.GAUGES.map { CockpitReading(it.label, "--", "") }
+        cockpit.setState(CockpitState(readings = readings))
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        cockpit.draw(android.graphics.Canvas(android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)))
+
+        readings.forEach { reading ->
+            assertEquals(reading.title, cockpit.activeGaugeTitle())
+            val tap = android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_UP, 810f, 529f, 0)
+            cockpit.onTouchEvent(tap)
+            tap.recycle()
+        }
+
+        assertEquals(readings.first().title, cockpit.activeGaugeTitle())
     }
 
     @Test

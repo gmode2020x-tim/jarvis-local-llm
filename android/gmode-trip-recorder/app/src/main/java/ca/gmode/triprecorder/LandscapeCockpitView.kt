@@ -141,6 +141,8 @@ class LandscapeCockpitView(context: Context) : View(context) {
 
     internal fun activeGaugeTitles(): List<String> = state.readings.map { it.title }
 
+    internal fun activeGaugeTitle(): String? = state.readings.getOrNull(selectedGaugeIndex)?.title
+
     internal fun activeSideButtons(): List<SideButtonConfig> = state.sideButtons
 
     internal fun activeBackgroundResourceId(): Int = tripTypeBackgroundResourceId(state.tripTypeLabel, state.offRoadSceneId)

@@ -32,7 +32,7 @@ data class DashboardConfig(
         val snowVehicle = DashboardSettings.normalizeVehicleId(snowVehicleId, "snow")
         val waterVehicle = DashboardSettings.normalizeVehicleId(waterVehicleId, "water")
         val known = DashboardSettings.GAUGES.mapTo(mutableSetOf()) { it.id }
-        val ordered = gaugeIds.filter { it in known }.distinct().take(DashboardSettings.MAX_GAUGES)
+        val ordered = gaugeIds.filter { it in known }.distinct()
         return copy(
             vehicleId = offRoadVehicle,
             streetVehicleId = streetVehicle,
@@ -105,8 +105,6 @@ class DashboardSettings(context: Context) {
         const val DEFAULT_OFF_ROAD_SCENE_ID = "dirt"
         const val DEFAULT_VIEW_MODE_ID = "auto"
         const val AUTOMATIC_ROLL_VIEW_ID = "rear"
-        const val MAX_GAUGES = 2
-
         val VEHICLE_ID_ALIASES = mapOf(
             "atv_utv" to "sxs",
             "motorcycle" to "dirt_bike",
