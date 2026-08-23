@@ -19,6 +19,18 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityInstrumentedTest {
     @Test
+    fun threeDChassisRollsInTheSameDirectionAsTheGaugeLine() {
+        val renderer = Vehicle3DRenderer()
+        val positive = renderer.projectedChassisAngleDegrees(17f)
+        val negative = renderer.projectedChassisAngleDegrees(-17f)
+        val level = renderer.projectedChassisAngleDegrees(0f)
+
+        assertTrue("positive roll must slope clockwise like the Canvas line", positive in 12f..22f)
+        assertTrue("negative roll must slope counter-clockwise like the Canvas line", negative in -22f..-12f)
+        assertTrue(kotlin.math.abs(level) < 0.1f)
+    }
+
+    @Test
     fun zeroAttitude3DPreviewRendersInsideTheGauge() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val cockpit = LandscapeCockpitView(context)
@@ -39,6 +51,45 @@ class MainActivityInstrumentedTest {
         cockpit.draw(android.graphics.Canvas(bitmap))
         assertTrue(android.graphics.Color.alpha(bitmap.getPixel(640, 278)) > 0)
         val output = java.io.File(context.getExternalFilesDir(null), "gmode-3d-attitude-preview.png")
+        output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+    }
+
+    @Test
+    fun positiveRoll3DPreviewMatchesGaugeLine() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cockpit = LandscapeCockpitView(context)
+        cockpit.setState(
+            CockpitState(
+                time = "1:33",
+                vehicleId = "sand_rail",
+                vehicleLabel = "Sand rail",
+                tripTypeLabel = "OFF ROAD",
+                offRoadSceneId = "sand",
+                pitchDegrees = -11.0,
+                rollDegrees = 17.0,
+                batteryPercent = 62,
+                readings = listOf(
+                    CockpitReading(
+                        "Attitude",
+                        "PITCH -11°   ROLL +17°",
+                        "",
+                        subtitle = "LIVE 3D · DRAG TO ORBIT",
+                        gaugeId = "attitude",
+                    ),
+                ),
+            ),
+        )
+        cockpit.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1280, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(592, android.view.View.MeasureSpec.EXACTLY),
+        )
+        cockpit.layout(0, 0, 1280, 592)
+        val bitmap = android.graphics.Bitmap.createBitmap(1280, 592, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        repeat(28) { cockpit.draw(canvas) }
+        assertTrue(android.graphics.Color.alpha(bitmap.getPixel(640, 278)) > 0)
+        val output = java.io.File(context.getExternalFilesDir(null), "gmode-3d-roll-preview.png")
         output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }
