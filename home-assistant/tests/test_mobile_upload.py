@@ -27,6 +27,8 @@ def load_component():
     helpers = types.ModuleType("homeassistant.helpers")
     aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
     aiohttp_client.async_get_clientsession = lambda _hass: None
+    event = types.ModuleType("homeassistant.helpers.event")
+    event.async_track_state_change_event = lambda *_args, **_kwargs: None
     sys.modules.update(
         {
             "homeassistant": homeassistant,
@@ -36,6 +38,7 @@ def load_component():
             "homeassistant.core": core,
             "homeassistant.helpers": helpers,
             "homeassistant.helpers.aiohttp_client": aiohttp_client,
+            "homeassistant.helpers.event": event,
         }
     )
 
@@ -81,6 +84,11 @@ class FakeStates:
     def get(self, entity_id: str):
         return self.values.get(entity_id)
 
+    def async_set(self, entity_id: str, state: str, attributes: dict | None = None):
+        value = FakeState(state)
+        value.attributes = attributes or {}
+        self.values[entity_id] = value
+
 
 def payload(status: str = "active") -> dict:
     return {
@@ -120,6 +128,41 @@ def payload(status: str = "active") -> dict:
                 "longitude": -79.1001,
                 "accuracyMeters": 5.0,
             },
+        ],
+    }
+
+
+def diagnostics_payload(command_id: str = "") -> dict:
+    return {
+        "protocolVersion": 1,
+        "appVersion": "2.1.0",
+        "deviceId": "test-s24",
+        "sentAt": "2026-08-28T19:00:00Z",
+        "acknowledgedCommandId": command_id,
+        "snapshot": {
+            "overallStatus": "ready",
+            "syncState": "Up to date",
+            "syncMessage": "All diagnostics stored",
+            "gpsStatus": "GPS standby",
+            "gpsRetryCount": 0,
+            "autoEnabled": True,
+            "autoStatus": "Armed",
+            "pendingPoints": 0,
+            "backgroundLocationGranted": True,
+            "fineLocationGranted": True,
+            "notificationsGranted": True,
+            "batteryUnrestricted": True,
+            "locationEnabled": True,
+            "batteryPercent": 71,
+        },
+        "logs": [
+            {
+                "id": "event-1",
+                "at": "2026-08-28T18:59:00Z",
+                "category": "gps",
+                "state": "ready",
+                "message": "GPS fix received",
+            }
         ],
     }
 
@@ -178,6 +221,38 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(snapshot["automatic_tracking"])
         self.assertEqual("mobile_upload", snapshot["tracking_mode"])
         self.assertEqual(original, json.loads(state_file.read_text(encoding="utf-8")))
+
+    async def test_diagnostics_are_deduplicated_and_exposed_as_entities(self) -> None:
+        first = await self.recorder.import_mobile_diagnostics(diagnostics_payload())
+        second = await self.recorder.import_mobile_diagnostics(diagnostics_payload())
+
+        self.assertEqual(["event-1"], first["acceptedLogIds"])
+        self.assertEqual([], second["acceptedLogIds"])
+        saved = json.loads((self.root / "gmode_trip_recorder.json").read_text(encoding="utf-8"))
+        client = saved["mobile_clients"]["test-s24"]
+        self.assertEqual("2.1.0", client["app_version"])
+        self.assertEqual(1, len(client["logs"]))
+        status = self.recorder.hass.states.get(component.MOBILE_STATUS_ENTITY)
+        self.assertEqual("ready", status.state)
+        self.assertEqual(0, status.attributes["pendingPoints"])
+
+    async def test_ha_control_is_returned_and_command_acknowledgement_clears_it(self) -> None:
+        control = await self.recorder.set_mobile_control(
+            {
+                "notice": "Comparison logging enabled",
+                "latest_version": "2.1.0",
+                "download_url": "https://example.invalid/gmode.apk",
+                "settings": {"locationIntervalSeconds": 3, "minimumDistanceMeters": 2},
+                "command_action": "rearm",
+            }
+        )
+        command_id = control["command"]["id"]
+        response = await self.recorder.import_mobile_diagnostics(diagnostics_payload())
+        self.assertEqual("rearm", response["control"]["command"]["action"])
+
+        acknowledged = await self.recorder.import_mobile_diagnostics(diagnostics_payload(command_id))
+        self.assertNotIn("command", acknowledged["control"])
+        self.assertEqual(3, acknowledged["control"]["settings"]["locationIntervalSeconds"])
 
 
 if __name__ == "__main__":

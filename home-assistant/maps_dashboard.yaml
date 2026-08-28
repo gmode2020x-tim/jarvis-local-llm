@@ -1,0 +1,78 @@
+title: Maps
+views:
+  - title: Live Map
+    path: locations
+    icon: mdi:map-marker-radius
+    type: panel
+    cards:
+      - type: iframe
+        title: Live Map
+        url: /local/gmode_trip_recorder/locations_20260717.html?v=20260722-focus-ingersoll
+        aspect_ratio: "16:12"
+  - title: Trips
+    path: trips
+    icon: mdi:map-clock
+    type: panel
+    cards:
+      - type: iframe
+        title: Trips
+        url: /local/gmode_trip_recorder/trips_ha_api_20260717.html?v=20260827-source-comparison
+        aspect_ratio: "16:13"
+  - title: Routes
+    path: history
+    icon: mdi:routes
+    type: panel
+    cards:
+      - type: iframe
+        title: Routes and Trip Management
+        url: /local/gmode_trip_recorder/routes_ha_api_20260717.html?v=20260807-offroad-gap-segments
+        aspect_ratio: "16:12"
+  - title: GMODE Phone
+    path: gmode-phone
+    icon: mdi:cellphone-cog
+    cards:
+      - type: entities
+        title: Phone sync and diagnostics
+        show_header_toggle: false
+        entities:
+          - entity: sensor.gmode_mobile_status
+            name: Phone status
+          - entity: sensor.gmode_mobile_log
+            name: Latest app log
+          - entity: sensor.gmode_mobile_control
+            name: HA control revision
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: Sync phone
+            icon: mdi:sync
+            tap_action:
+              action: call-service
+              service: gmode_trip_recorder.set_mobile_control
+              service_data:
+                notice: Home Assistant requested a GMODE sync.
+                command_action: sync
+          - type: button
+            name: Re-arm tracking
+            icon: mdi:crosshairs-gps
+            tap_action:
+              action: call-service
+              service: gmode_trip_recorder.set_mobile_control
+              service_data:
+                notice: Home Assistant requested an automatic tracking re-arm.
+                command_action: rearm
+          - type: button
+            name: Clear logs
+            icon: mdi:delete-sweep
+            confirmation:
+              text: Clear retained GMODE phone logs?
+            tap_action:
+              action: call-service
+              service: gmode_trip_recorder.clear_mobile_logs
+      - type: markdown
+        title: Send a notice or update
+        content: >-
+          Use **Developer tools > Actions > gmode_trip_recorder.set_mobile_control**
+          to send editable notice text, bounded recording settings, or app update
+          version, URL, and SHA-256. GMODE checks automatically every 15 minutes
+          while online; **Sync phone** is delivered on the next successful check.

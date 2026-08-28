@@ -16,6 +16,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_state_change_event
 
 DOMAIN = "gmode_trip_recorder"
 DEFAULT_TRACKING_ENTITY = "device_tracker.phone"
@@ -24,6 +25,10 @@ DEFAULT_STATE_FILE = "gmode_trip_recorder.json"
 MOBILE_SOURCE = "gmode_android"
 MOBILE_PROTOCOL_VERSION = 1
 MAX_MOBILE_BATCH_POINTS = 500
+MAX_MOBILE_DIAGNOSTIC_LOGS = 100
+MOBILE_STATUS_ENTITY = "sensor.gmode_mobile_status"
+MOBILE_LOG_ENTITY = "sensor.gmode_mobile_log"
+MOBILE_CONTROL_ENTITY = "sensor.gmode_mobile_control"
 LOCATION_FRESH_MINUTES = 360
 OFF_ROAD_MIN_POINTS = 4
 OFF_ROAD_SAMPLE_LIMIT = 14
@@ -55,6 +60,28 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     hass.http.register_view(LocationSnapshotView(recorder))
     hass.http.register_view(TripManageView(recorder))
     hass.http.register_view(MobileTripUploadView(recorder))
+    hass.http.register_view(MobileDiagnosticsView(recorder))
+
+    async def _async_set_mobile_control(call: Any) -> None:
+        await recorder.set_mobile_control(dict(call.data))
+
+    async def _async_clear_mobile_logs(call: Any) -> None:
+        await recorder.clear_mobile_logs(str(call.data.get("device_id") or "").strip() or None)
+
+    if not hass.services.has_service(DOMAIN, "set_mobile_control"):
+        hass.services.async_register(DOMAIN, "set_mobile_control", _async_set_mobile_control)
+    if not hass.services.has_service(DOMAIN, "clear_mobile_logs"):
+        hass.services.async_register(DOMAIN, "clear_mobile_logs", _async_clear_mobile_logs)
+    if recorder.automatic_tracking:
+        async def _async_track_phone_state(_event: Any) -> None:
+            await recorder.record_automatic_tracking_sample()
+
+        recorder.unsubscribe_tracking = async_track_state_change_event(
+            hass,
+            [recorder.tracking_entity],
+            _async_track_phone_state,
+        )
+    await recorder.publish_mobile_entities()
     return True
 
 
@@ -140,6 +167,33 @@ class MobileTripUploadView(HomeAssistantView):
             )
 
 
+class MobileDiagnosticsView(HomeAssistantView):
+    """Exchange authenticated phone diagnostics and HA control data."""
+
+    url = "/api/gmode_trip_recorder/mobile/diagnostics"
+    name = "api:gmode_trip_recorder:mobile_diagnostics"
+    requires_auth = True
+
+    def __init__(self, recorder: "TripRecorder") -> None:
+        self._recorder = recorder
+
+    async def post(self, request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+            return self.json(await self._recorder.import_mobile_diagnostics(body))
+        except TripRecorderError as err:
+            return self.json(
+                {"status": "error", "updated_at": utc_now().isoformat(), "error": str(err)},
+                status_code=err.status_code,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Mobile diagnostics exchange failed")
+            return self.json(
+                {"status": "error", "updated_at": utc_now().isoformat(), "error": str(err)},
+                status_code=400,
+            )
+
+
 class TripRecorderError(Exception):
     """Trip recorder API error."""
 
@@ -162,6 +216,7 @@ class TripRecorder:
         self.route_places = parse_route_places(config.get("route_places"), hass)
         self.off_road_reference_place = parse_off_road_reference_place(config.get("off_road_reference_place"))
         self.state_lock = asyncio.Lock()
+        self.unsubscribe_tracking = None
 
     async def import_mobile_trip(self, body: dict[str, Any]) -> dict[str, Any]:
         """Merge an authenticated Android batch without duplicating points."""
@@ -259,6 +314,202 @@ class TripRecorder:
             "tripStatus": trip["status"],
         }
 
+    async def import_mobile_diagnostics(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Store a phone heartbeat and return the current HA control payload."""
+        if not isinstance(body, dict):
+            raise TripRecorderError("JSON object required")
+        if int(body.get("protocolVersion") or 0) != MOBILE_PROTOCOL_VERSION:
+            raise TripRecorderError(f"protocolVersion must be {MOBILE_PROTOCOL_VERSION}")
+        device_id = clean_identifier(body.get("deviceId"), "deviceId")
+        snapshot = normalize_mobile_snapshot(body.get("snapshot"))
+        raw_logs = body.get("logs")
+        if not isinstance(raw_logs, list):
+            raise TripRecorderError("logs array is required")
+        if len(raw_logs) > MAX_MOBILE_DIAGNOSTIC_LOGS:
+            raise TripRecorderError(f"logs cannot exceed {MAX_MOBILE_DIAGNOSTIC_LOGS}", 413)
+        incoming_logs = [entry for entry in (normalize_mobile_log(item) for item in raw_logs) if entry]
+        now = utc_now().isoformat()
+
+        async with self.state_lock:
+            recorder = await self.read_trip_recorder()
+            clients = recorder.get("mobile_clients") if isinstance(recorder.get("mobile_clients"), dict) else {}
+            previous = clients.get(device_id) if isinstance(clients.get(device_id), dict) else {}
+            existing_logs = previous.get("logs") if isinstance(previous.get("logs"), list) else []
+            known_ids = {str(item.get("id")) for item in existing_logs if isinstance(item, dict)}
+            accepted_logs = [item for item in incoming_logs if item["id"] not in known_ids]
+            merged_logs = (existing_logs + accepted_logs)[-MAX_MOBILE_DIAGNOSTIC_LOGS:]
+            client = {
+                "device_id": device_id,
+                "app_version": clean_mobile_text(body.get("appVersion"), 32),
+                "last_seen": now,
+                "last_sent_at": clean_mobile_date(body.get("sentAt"), "sentAt"),
+                **snapshot,
+                "logs": merged_logs,
+            }
+            clients[device_id] = client
+            recorder["mobile_clients"] = clients
+            control = normalize_mobile_control(recorder.get("mobile_control"))
+            acknowledged_command_id = clean_mobile_text(body.get("acknowledgedCommandId"), 128)
+            command = control.get("command") if isinstance(control.get("command"), dict) else None
+            if command and acknowledged_command_id and acknowledged_command_id == command.get("id"):
+                client["last_acknowledged_command_id"] = acknowledged_command_id
+                client["last_acknowledged_command_at"] = now
+                control.pop("command", None)
+                recorder["mobile_control"] = control
+            recorder["updated_at"] = now
+            await self.write_trip_recorder(recorder)
+
+        await self.publish_mobile_entities(recorder)
+        return {
+            "status": "ok",
+            "updatedAt": now,
+            "acceptedLogIds": [item["id"] for item in accepted_logs],
+            "control": control,
+        }
+
+    async def set_mobile_control(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Persist versioned HA-to-phone settings, notices, updates, or a safe command."""
+        async with self.state_lock:
+            recorder = await self.read_trip_recorder()
+            current = normalize_mobile_control(recorder.get("mobile_control"))
+            raw = dict(current)
+            aliases = {
+                "notice": "notice",
+                "latest_version": "latestVersion",
+                "latestVersion": "latestVersion",
+                "download_url": "downloadUrl",
+                "downloadUrl": "downloadUrl",
+                "sha256": "sha256",
+            }
+            for source_key, target_key in aliases.items():
+                if source_key in data:
+                    raw[target_key] = data[source_key]
+            if isinstance(data.get("settings"), dict):
+                raw["settings"] = data["settings"]
+            try:
+                raw["revision"] = max(int(data.get("revision") or 0), int(current.get("revision") or 0) + 1)
+            except (TypeError, ValueError):
+                raw["revision"] = int(current.get("revision") or 0) + 1
+            command_data = data.get("command") if isinstance(data.get("command"), dict) else {}
+            command_action = clean_mobile_text(data.get("command_action") or command_data.get("action"), 32).lower()
+            if command_action:
+                if command_action not in {"sync", "rearm"}:
+                    raise TripRecorderError("command_action must be sync or rearm")
+                command_id = clean_mobile_text(command_data.get("id"), 128) or hashlib.sha256(
+                    f"{utc_now().isoformat()}\n{command_action}".encode("utf-8")
+                ).hexdigest()[:24]
+                raw["command"] = {"id": command_id, "action": command_action}
+            control = normalize_mobile_control(raw)
+            recorder["mobile_control"] = control
+            recorder["updated_at"] = utc_now().isoformat()
+            await self.write_trip_recorder(recorder)
+        await self.publish_mobile_entities(recorder)
+        return control
+
+    async def clear_mobile_logs(self, device_id: str | None = None) -> None:
+        """Clear retained phone event logs while preserving the latest heartbeat."""
+        async with self.state_lock:
+            recorder = await self.read_trip_recorder()
+            clients = recorder.get("mobile_clients") if isinstance(recorder.get("mobile_clients"), dict) else {}
+            for key, client in clients.items():
+                if (device_id is None or key == device_id) and isinstance(client, dict):
+                    client["logs"] = []
+            recorder["mobile_clients"] = clients
+            recorder["updated_at"] = utc_now().isoformat()
+            await self.write_trip_recorder(recorder)
+        await self.publish_mobile_entities(recorder)
+
+    async def publish_mobile_entities(self, recorder: dict[str, Any] | None = None) -> None:
+        """Expose the latest phone heartbeat, logs, and outbound control in HA."""
+        current = recorder or await self.read_trip_recorder()
+        clients = current.get("mobile_clients") if isinstance(current.get("mobile_clients"), dict) else {}
+        valid_clients = [item for item in clients.values() if isinstance(item, dict)]
+        latest = max(valid_clients, key=lambda item: str(item.get("last_seen") or ""), default=None)
+        if latest:
+            logs = latest.get("logs") if isinstance(latest.get("logs"), list) else []
+            status_state = clean_mobile_text(latest.get("overallStatus") or latest.get("syncState"), 64).lower().replace(" ", "_") or "online"
+            status_attributes = {key: value for key, value in latest.items() if key != "logs"}
+            status_attributes.update({"friendly_name": "GMODE Mobile Status", "retained_log_count": len(logs)})
+            self.hass.states.async_set(MOBILE_STATUS_ENTITY, status_state, status_attributes)
+            last_log = logs[-1] if logs else {}
+            self.hass.states.async_set(
+                MOBILE_LOG_ENTITY,
+                clean_mobile_text(last_log.get("state"), 64).lower().replace(" ", "_") or "none",
+                {
+                    "friendly_name": "GMODE Mobile Log",
+                    "device_id": latest.get("device_id"),
+                    "last_event": last_log,
+                    "recent_events": logs[-25:],
+                    "event_count": len(logs),
+                },
+            )
+        else:
+            self.hass.states.async_set(MOBILE_STATUS_ENTITY, "unknown", {"friendly_name": "GMODE Mobile Status"})
+            self.hass.states.async_set(MOBILE_LOG_ENTITY, "none", {"friendly_name": "GMODE Mobile Log", "recent_events": []})
+        control = normalize_mobile_control(current.get("mobile_control"))
+        self.hass.states.async_set(
+            MOBILE_CONTROL_ENTITY,
+            str(control.get("revision") or 0),
+            {"friendly_name": "GMODE Mobile Control", **control},
+        )
+
+    async def record_automatic_tracking_sample(self) -> None:
+        """Persist a lightweight HA tracker sample without building the dashboard snapshot."""
+        if not self.automatic_tracking:
+            return
+        async with self.state_lock:
+            now = utc_now()
+            phone = self.hass.states.get(self.tracking_entity)
+            if phone is None:
+                _LOGGER.warning("Automatic trip tracking entity %s is unavailable", self.tracking_entity)
+                return
+            recorder = await self.read_trip_recorder()
+            recorder["trips"] = recorder.get("trips") if isinstance(recorder.get("trips"), list) else []
+            previous_location = recorder.get("last_location") or "unknown"
+            is_home = is_home_state(phone)
+            point = make_trip_point(phone, now)
+            road_cache: dict[str, float | None] = {}
+            if not is_home:
+                trip = next((item for item in recorder["trips"] if item.get("id") == recorder.get("active_trip_id")), None)
+                if trip is None and should_start_away_trip(recorder, point, previous_location):
+                    trip = {
+                        "id": f"trip-{format_trip_id(now)}",
+                        "source": "home_assistant",
+                        "title": f"Trip {format_trip_title(now)}",
+                        "mode": "motor_vehicle",
+                        "trip_type": "street",
+                        "trip_type_source": "auto",
+                        "status": "active",
+                        "start_at": now.isoformat(),
+                        "end_at": None,
+                        "points": [],
+                    }
+                    recorder["trips"].append(trip)
+                    recorder["active_trip_id"] = trip["id"]
+                if trip is not None:
+                    append_trip_point(trip, point)
+                    await self.update_trip_auto_classification(trip, road_cache)
+                    arrival_point = None
+                    if not await self.should_hold_off_road_trip_open(trip, road_cache):
+                        arrival_point = get_away_arrival_point(trip)
+                    if arrival_point is not None:
+                        trip["status"] = "complete"
+                        trip["end_at"] = arrival_point.get("at")
+                        trip["completed_reason"] = "stationary_away"
+                        recorder["active_trip_id"] = None
+            elif recorder.get("active_trip_id"):
+                trip = next((item for item in recorder["trips"] if item.get("id") == recorder.get("active_trip_id")), None)
+                if trip is not None:
+                    append_trip_point(trip, point)
+                    trip["status"] = "complete"
+                    trip["end_at"] = now.isoformat()
+                recorder["active_trip_id"] = None
+            recorder["last_location"] = "home" if is_home else "away"
+            recorder["updated_at"] = now.isoformat()
+            recorder["trips"] = trim_trip_history(recorder["trips"])
+            await self.update_trip_auto_classifications(recorder["trips"], road_cache)
+            await self.write_trip_recorder(recorder)
+
     async def update_trip_recorder_snapshot(self) -> dict[str, Any]:
         async with self.state_lock:
             return await self._update_trip_recorder_snapshot_locked()
@@ -286,6 +537,7 @@ class TripRecorder:
                 if trip is None and should_start_away_trip(recorder, point, previous_location):
                     trip = {
                         "id": f"trip-{format_trip_id(now)}",
+                        "source": "home_assistant",
                         "title": f"Trip {format_trip_title(now)}",
                         "mode": "motor_vehicle",
                         "trip_type": "street",
@@ -688,6 +940,89 @@ def clean_identifier(value: Any, field_name: str) -> str:
     return text
 
 
+def clean_mobile_text(value: Any, maximum: int = 240) -> str:
+    return " ".join(str(value or "").strip().split())[:maximum]
+
+
+def normalize_mobile_snapshot(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    text_fields = (
+        "overallStatus", "syncState", "syncMessage", "gpsStatus", "autoStatus",
+        "activeTripId", "activeTripTitle", "lastCommandId",
+    )
+    integer_fields = ("pendingPoints", "gpsRetryCount", "batteryPercent")
+    boolean_fields = (
+        "autoEnabled", "fineLocationGranted", "backgroundLocationGranted",
+        "notificationsGranted", "batteryUnrestricted", "locationEnabled",
+    )
+    snapshot = {key: clean_mobile_text(source.get(key)) for key in text_fields}
+    for key in integer_fields:
+        try:
+            snapshot[key] = max(0, int(source.get(key) or 0))
+        except (TypeError, ValueError):
+            snapshot[key] = 0
+    snapshot.update({key: bool(source.get(key)) for key in boolean_fields})
+    return snapshot
+
+
+def normalize_mobile_log(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    event_id = clean_mobile_text(value.get("id"), 128)
+    at = clean_mobile_date(value.get("at"), "log.at")
+    if not event_id or at is None:
+        return None
+    return {
+        "id": event_id,
+        "at": at,
+        "category": clean_mobile_text(value.get("category"), 32) or "app",
+        "state": clean_mobile_text(value.get("state"), 48) or "info",
+        "message": clean_mobile_text(value.get("message"), 240),
+    }
+
+
+def normalize_mobile_control(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    try:
+        revision = max(0, int(source.get("revision") or 0))
+    except (TypeError, ValueError):
+        revision = 0
+    settings_source = source.get("settings") if isinstance(source.get("settings"), dict) else {}
+    settings: dict[str, Any] = {}
+    limits = {
+        "homeRadiusMeters": (100, 5000),
+        "wifiDepartureDelayMinutes": (1, 30),
+        "returnDwellMinutes": (1, 120),
+        "locationIntervalSeconds": (2, 300),
+        "minimumDistanceMeters": (1, 500),
+    }
+    for key, (minimum, maximum) in limits.items():
+        try:
+            if settings_source.get(key) is not None:
+                settings[key] = min(maximum, max(minimum, int(settings_source[key])))
+        except (TypeError, ValueError):
+            continue
+    trip_type = clean_mobile_text(settings_source.get("tripType"), 16).lower()
+    if trip_type in TRIP_TYPE_LABELS:
+        settings["tripType"] = trip_type
+    control = {
+        "revision": revision,
+        "notice": clean_mobile_text(source.get("notice"), 500),
+        "latestVersion": clean_mobile_text(source.get("latestVersion"), 32),
+        "downloadUrl": clean_mobile_text(source.get("downloadUrl"), 500),
+        "sha256": clean_mobile_text(source.get("sha256"), 64).lower(),
+        "settings": settings,
+    }
+    command_source = source.get("command") if isinstance(source.get("command"), dict) else {}
+    action = clean_mobile_text(command_source.get("action"), 32).lower()
+    if action in {"sync", "rearm"}:
+        control["command"] = {
+            "id": clean_mobile_text(command_source.get("id"), 128),
+            "action": action,
+        }
+    return control
+
+
 def make_mobile_trip_id(device_id: str, source_trip_id: str) -> str:
     digest = hashlib.sha256(f"{device_id}\n{source_trip_id}".encode("utf-8")).hexdigest()[:24]
     return f"mobile-{digest}"
@@ -956,6 +1291,11 @@ def summarize_trip(trip: dict[str, Any] | None) -> dict[str, Any] | None:
     elevation = summarize_elevation_points(points)
     summary = {
         "id": trip.get("id"),
+        "source": trip.get("source") or ("home_assistant" if str(trip.get("id") or "").startswith("trip-") else "unknown"),
+        "source_device_id": trip.get("source_device_id") or "",
+        "source_trip_id": trip.get("source_trip_id") or "",
+        "mobile_app_version": trip.get("mobile_app_version") or "",
+        "last_mobile_upload_at": trip.get("last_mobile_upload_at"),
         "title": trip.get("title"),
         "mode": trip.get("mode") or "motor_vehicle",
         "trip_type": clean_trip_type(trip.get("trip_type") or trip.get("mode")),

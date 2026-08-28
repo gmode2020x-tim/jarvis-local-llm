@@ -1,0 +1,49 @@
+set_mobile_control:
+  name: Set GMODE mobile control
+  description: Send a notice, update, bounded recording settings, or a safe command to the GMODE phone app on its next sync.
+  fields:
+    notice:
+      name: Notice
+      description: Message displayed in the phone app.
+      example: "GPS comparison is active."
+      selector:
+        text:
+    latest_version:
+      name: Latest app version
+      example: "2.1.0"
+      selector:
+        text:
+    download_url:
+      name: App download URL
+      selector:
+        text:
+    sha256:
+      name: SHA-256
+      selector:
+        text:
+    settings:
+      name: Recording settings
+      description: Bounded settings object using the documented camelCase keys.
+      example:
+        locationIntervalSeconds: 5
+        minimumDistanceMeters: 5
+      selector:
+        object:
+    command_action:
+      name: Safe command
+      description: Request an immediate sync or automatic-recording re-arm.
+      selector:
+        select:
+          options:
+            - sync
+            - rearm
+
+clear_mobile_logs:
+  name: Clear GMODE mobile logs
+  description: Clear retained diagnostic events for one phone or every phone.
+  fields:
+    device_id:
+      name: Device ID
+      description: Leave blank to clear all retained GMODE mobile logs.
+      selector:
+        text:
