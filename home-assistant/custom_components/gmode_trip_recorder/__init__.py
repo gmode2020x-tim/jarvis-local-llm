@@ -279,6 +279,11 @@ class TripRecorder:
             trip["title"] = clean_trip_title(incoming_trip.get("title"), trip.get("title"), existing_points)
             trip["trip_type"] = clean_trip_type(incoming_trip.get("tripType") or trip.get("trip_type"))
             trip["trip_type_source"] = "manual"
+            trip["stationary_trim"] = normalize_stationary_trim_config(
+                incoming_trip.get("stationaryTrim")
+                if incoming_trip.get("stationaryTrim") is not None
+                else trip.get("stationary_trim")
+            )
             trip["start_at"] = clean_mobile_date(incoming_trip.get("startAt")) or (
                 existing_points[0].get("at") if existing_points else trip.get("start_at")
             )
@@ -950,10 +955,14 @@ def normalize_mobile_snapshot(value: Any) -> dict[str, Any]:
         "overallStatus", "syncState", "syncMessage", "gpsStatus", "autoStatus",
         "activeTripId", "activeTripTitle", "lastCommandId",
     )
-    integer_fields = ("pendingPoints", "gpsRetryCount", "batteryPercent")
+    integer_fields = (
+        "pendingPoints", "gpsRetryCount", "batteryPercent", "stationaryRadiusMeters",
+        "stationaryPauseMinutes", "stationarySplitMinutes",
+    )
     boolean_fields = (
         "autoEnabled", "fineLocationGranted", "backgroundLocationGranted",
         "notificationsGranted", "batteryUnrestricted", "locationEnabled",
+        "stationaryTrimEnabled", "stopManualTripsAtHome",
     )
     snapshot = {key: clean_mobile_text(source.get(key)) for key in text_fields}
     for key in integer_fields:
@@ -962,7 +971,38 @@ def normalize_mobile_snapshot(value: Any) -> dict[str, Any]:
         except (TypeError, ValueError):
             snapshot[key] = 0
     snapshot.update({key: bool(source.get(key)) for key in boolean_fields})
+    try:
+        snapshot["stationarySpeedKmh"] = max(0.0, float(source.get("stationarySpeedKmh") or 0))
+    except (TypeError, ValueError):
+        snapshot["stationarySpeedKmh"] = 0.0
     return snapshot
+
+
+def normalize_stationary_trim_config(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    try:
+        radius = min(500, max(25, int(source.get("radiusMeters", 150))))
+    except (TypeError, ValueError):
+        radius = 150
+    try:
+        pause = min(30, max(1, int(source.get("pauseMinutes", 3))))
+    except (TypeError, ValueError):
+        pause = 3
+    try:
+        split = min(120, max(5, int(source.get("splitMinutes", 15))))
+    except (TypeError, ValueError):
+        split = 15
+    try:
+        speed = min(20.0, max(1.0, float(source.get("speedKmh", 5.4))))
+    except (TypeError, ValueError):
+        speed = 5.4
+    return {
+        "enabled": bool(source.get("enabled", True)),
+        "radius_meters": radius,
+        "pause_minutes": pause,
+        "split_minutes": max(pause, split),
+        "speed_kmh": speed,
+    }
 
 
 def normalize_mobile_log(value: Any) -> dict[str, str] | None:
@@ -995,6 +1035,9 @@ def normalize_mobile_control(value: Any) -> dict[str, Any]:
         "returnDwellMinutes": (1, 120),
         "locationIntervalSeconds": (2, 300),
         "minimumDistanceMeters": (1, 500),
+        "stationaryRadiusMeters": (25, 500),
+        "stationaryPauseMinutes": (1, 30),
+        "stationarySplitMinutes": (5, 120),
     }
     for key, (minimum, maximum) in limits.items():
         try:
@@ -1005,6 +1048,14 @@ def normalize_mobile_control(value: Any) -> dict[str, Any]:
     trip_type = clean_mobile_text(settings_source.get("tripType"), 16).lower()
     if trip_type in TRIP_TYPE_LABELS:
         settings["tripType"] = trip_type
+    for key in ("stationaryTrimEnabled", "stopManualTripsAtHome"):
+        if key in settings_source:
+            settings[key] = bool(settings_source.get(key))
+    if settings_source.get("stationarySpeedKmh") is not None:
+        try:
+            settings["stationarySpeedKmh"] = min(20.0, max(1.0, float(settings_source["stationarySpeedKmh"])))
+        except (TypeError, ValueError):
+            pass
     control = {
         "revision": revision,
         "notice": clean_mobile_text(source.get("notice"), 500),
@@ -1185,6 +1236,142 @@ def get_away_arrival_point(trip: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def trim_stationary_trip_points(trip: dict[str, Any], points: list[dict[str, Any]]) -> dict[str, Any]:
+    config_value = trip.get("stationary_trim")
+    if config_value is None and trip.get("source") != MOBILE_SOURCE:
+        return stationary_trim_result([points], [], points)
+    config = normalize_stationary_trim_config(config_value)
+    ordered = sorted(
+        [point for point in points if is_finite(point.get("lat")) and is_finite(point.get("lon"))],
+        key=lambda point: (parse_date(point.get("at")), int(point.get("sequence") or 0)),
+    )
+    if not config["enabled"] or len(ordered) < 3:
+        return stationary_trim_result([ordered], [], ordered)
+
+    radius = float(config["radius_meters"])
+    pause_seconds = float(config["pause_minutes"]) * 60
+    speed_threshold_mps = float(config["speed_kmh"]) / 3.6
+    periods: list[dict[str, Any]] = []
+    start = 0
+    while start < len(ordered) - 1:
+        end = start
+        center_lat = float(ordered[start]["lat"])
+        center_lon = float(ordered[start]["lon"])
+        slow_count = 1 if is_stationary_speed(ordered[start], speed_threshold_mps) else 0
+        while end < len(ordered) - 1:
+            candidate = ordered[end + 1]
+            if haversine_meters(center_lat, center_lon, candidate["lat"], candidate["lon"]) > radius:
+                break
+            end += 1
+            count = end - start + 1
+            center_lat += (float(candidate["lat"]) - center_lat) / count
+            center_lon += (float(candidate["lon"]) - center_lon) / count
+            if is_stationary_speed(candidate, speed_threshold_mps):
+                slow_count += 1
+
+        duration_seconds = max(0.0, (parse_date(ordered[end].get("at")) - parse_date(ordered[start].get("at"))).total_seconds())
+        slow_fraction = slow_count / max(1, end - start + 1)
+        if duration_seconds >= pause_seconds and slow_fraction >= 0.6:
+            expanded_start = start
+            expanded_end = end
+            while expanded_start > 0 and haversine_meters(
+                center_lat, center_lon, ordered[expanded_start - 1]["lat"], ordered[expanded_start - 1]["lon"]
+            ) <= radius:
+                expanded_start -= 1
+            while expanded_end < len(ordered) - 1 and haversine_meters(
+                center_lat, center_lon, ordered[expanded_end + 1]["lat"], ordered[expanded_end + 1]["lon"]
+            ) <= radius:
+                expanded_end += 1
+            period_seconds = max(
+                0.0,
+                (
+                    parse_date(ordered[expanded_end].get("at"))
+                    - parse_date(ordered[expanded_start].get("at"))
+                ).total_seconds(),
+            )
+            next_period = {
+                "start_index": expanded_start,
+                "end_index": expanded_end,
+                "start_at": ordered[expanded_start].get("at"),
+                "end_at": ordered[expanded_end].get("at"),
+                "duration_minutes": round(period_seconds / 60, 1),
+            }
+            if periods and next_period["start_index"] <= periods[-1]["end_index"]:
+                merged_end = max(periods[-1]["end_index"], next_period["end_index"])
+                periods[-1]["end_index"] = merged_end
+                periods[-1]["end_at"] = ordered[merged_end].get("at")
+                periods[-1]["duration_minutes"] = round(
+                    (
+                        parse_date(ordered[merged_end].get("at"))
+                        - parse_date(ordered[periods[-1]["start_index"]].get("at"))
+                    ).total_seconds()
+                    / 60,
+                    1,
+                )
+            else:
+                periods.append(next_period)
+            start = expanded_end + 1
+        else:
+            start += 1
+
+    if not periods:
+        return stationary_trim_result([ordered], [], ordered)
+
+    segments: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    cursor = 0
+    for period in periods:
+        while cursor <= period["start_index"] and cursor < len(ordered):
+            current.append(ordered[cursor])
+            cursor += 1
+        if period["start_index"] == 0:
+            current = []
+        departure = ordered[period["end_index"]]
+        if float(period["duration_minutes"]) >= float(config["split_minutes"]) and current:
+            segments.append(current)
+            current = []
+        if period["end_index"] < len(ordered) - 1:
+            current.append(departure)
+        cursor = period["end_index"] + 1
+    while cursor < len(ordered):
+        current.append(ordered[cursor])
+        cursor += 1
+    if current:
+        segments.append(current)
+    segments = [segment for segment in segments if len(segment) >= 2]
+    if not segments and len(ordered) >= 2:
+        segments = [[ordered[0], ordered[-1]]]
+    return stationary_trim_result(segments, periods, ordered)
+
+
+def stationary_trim_result(
+    segments: list[list[dict[str, Any]]],
+    periods: list[dict[str, Any]],
+    raw_points: list[dict[str, Any]],
+) -> dict[str, Any]:
+    raw_duration_seconds = 0.0
+    if len(raw_points) >= 2:
+        raw_duration_seconds = max(
+            0.0,
+            (parse_date(raw_points[-1].get("at")) - parse_date(raw_points[0].get("at"))).total_seconds(),
+        )
+    stationary_seconds = sum(float(period.get("duration_minutes") or 0) * 60 for period in periods)
+    return {
+        "segments": segments,
+        "points": [point for segment in segments for point in segment],
+        "periods": periods,
+        "distance_meters": sum(get_trip_distance_meters(segment) for segment in segments),
+        "raw_duration_minutes": round(raw_duration_seconds / 60),
+        "moving_duration_minutes": max(0, round((raw_duration_seconds - stationary_seconds) / 60)),
+        "stationary_minutes": round(stationary_seconds / 60, 1),
+    }
+
+
+def is_stationary_speed(point: dict[str, Any], threshold_mps: float) -> bool:
+    speed = point.get("speed")
+    return not is_finite(speed) or float(speed) <= threshold_mps
+
+
 def is_home_state(entity: Any) -> bool:
     state = str(entity.state or "").lower()
     zones = entity.attributes.get("in_zones")
@@ -1291,11 +1478,14 @@ def summarize_route_group(group: dict[str, Any]) -> dict[str, Any]:
 def summarize_trip(trip: dict[str, Any] | None) -> dict[str, Any] | None:
     if not trip:
         return None
-    points = get_trip_points(trip)
-    distance_km = round(get_trip_distance_meters(points) / 1000, 1)
+    raw_points = get_trip_points(trip)
+    trim = trim_stationary_trip_points(trip, raw_points)
+    points = trim["points"]
+    distance_km = round(float(trim["distance_meters"]) / 1000, 1)
     if trip.get("source") == "arcgis" and is_finite(trip.get("source_length_m")):
         distance_km = round(float(trip.get("source_length_m") or 0) / 1000, 1)
-    duration_minutes = get_trip_duration_minutes(trip)
+    raw_duration_minutes = get_trip_duration_minutes(trip)
+    duration_minutes = int(trim["moving_duration_minutes"]) if trim["periods"] else raw_duration_minutes
     average_speed_kmh = round((distance_km / duration_minutes) * 60, 1) if duration_minutes > 0 else 0
     elevation = summarize_elevation_points(points)
     summary = {
@@ -1314,10 +1504,28 @@ def summarize_trip(trip: dict[str, Any] | None) -> dict[str, Any] | None:
         "end_at": trip.get("end_at"),
         "completed_reason": trip.get("completed_reason"),
         "duration_minutes": duration_minutes,
+        "raw_duration_minutes": raw_duration_minutes,
+        "stationary_minutes": trim["stationary_minutes"],
         "distance_km": distance_km,
         "average_speed_kmh": average_speed_kmh,
         "max_reported_speed_kmh": get_max_reported_speed_kmh(points),
-        "point_count": len(points),
+        "point_count": len(raw_points),
+        "trimmed_point_count": len(points),
+        "stationary_trimmed": bool(trim["periods"]),
+        "stationary_trim": normalize_stationary_trim_config(trip.get("stationary_trim"))
+        if trip.get("source") == MOBILE_SOURCE or trip.get("stationary_trim") is not None
+        else {"enabled": False},
+        "stationary_periods": trim["periods"],
+        "segments": [
+            {
+                "start_at": segment[0].get("at"),
+                "end_at": segment[-1].get("at"),
+                "point_count": len(segment),
+                "distance_km": round(get_trip_distance_meters(segment) / 1000, 1),
+            }
+            for segment in trim["segments"]
+            if segment
+        ],
         "custom_from_name": trip.get("custom_from_name") or "",
         "custom_to_name": trip.get("custom_to_name") or "",
         "custom_route_label": trip.get("custom_route_label") or "",
@@ -1327,7 +1535,7 @@ def summarize_trip(trip: dict[str, Any] | None) -> dict[str, Any] | None:
         "trail_class": trip.get("trail_class") or "",
         "trail_use": trip.get("trail_use") or "",
         "source_url": trip.get("source_url") or "",
-        "points": points,
+        "points": raw_points,
     }
     summary.update(elevation)
     return summary
