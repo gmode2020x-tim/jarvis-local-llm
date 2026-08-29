@@ -243,6 +243,50 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, summary["duration_minutes"])
         self.assertEqual(8, len(trip["points"]))
 
+    async def test_home_assistant_trips_use_default_stationary_trimming(self) -> None:
+        points = [
+            {"at": "2026-08-29T14:00:00+00:00", "lat": 43.0000, "lon": -80.0, "speed": 12.0},
+            {"at": "2026-08-29T14:01:00+00:00", "lat": 43.0100, "lon": -80.0, "speed": 12.0},
+            {"at": "2026-08-29T14:02:00+00:00", "lat": 43.0200, "lon": -80.0, "speed": 0.1},
+            {"at": "2026-08-29T14:17:00+00:00", "lat": 43.0201, "lon": -80.0, "speed": 0.0},
+            {"at": "2026-08-29T14:18:00+00:00", "lat": 43.0300, "lon": -80.0, "speed": 12.0},
+        ]
+        trip = {
+            "id": "trip-ha-test",
+            "source": "home_assistant",
+            "status": "complete",
+            "start_at": points[0]["at"],
+            "end_at": points[-1]["at"],
+            "points": points,
+        }
+
+        summary = component.summarize_trip(trip)
+
+        self.assertTrue(summary["stationary_trim"]["enabled"])
+        self.assertTrue(summary["stationary_trimmed"])
+        self.assertEqual(1, len(summary["stationary_periods"]))
+        self.assertEqual(15.0, summary["stationary_minutes"])
+        self.assertLess(summary["duration_minutes"], summary["raw_duration_minutes"])
+
+    async def test_catalog_geometry_is_not_stationary_trimmed_by_default(self) -> None:
+        points = [
+            {"at": "2026-08-29T14:00:00+00:00", "lat": 43.0, "lon": -80.0},
+            {"at": "2026-08-29T14:20:00+00:00", "lat": 43.0001, "lon": -80.0},
+            {"at": "2026-08-29T14:40:00+00:00", "lat": 43.0002, "lon": -80.0},
+        ]
+        trip = {
+            "id": "arcgis-test",
+            "source": "arcgis",
+            "list_suppressed": True,
+            "points": points,
+        }
+
+        summary = component.summarize_trip(trip)
+
+        self.assertFalse(summary["stationary_trim"]["enabled"])
+        self.assertFalse(summary["stationary_trimmed"])
+        self.assertEqual(len(points), summary["trimmed_point_count"])
+
     async def test_completed_trip_cannot_be_downgraded_by_late_retry(self) -> None:
         completed = await self.recorder.import_mobile_trip(payload("complete"))
         retried = await self.recorder.import_mobile_trip(payload("active"))

@@ -1238,7 +1238,7 @@ def get_away_arrival_point(trip: dict[str, Any]) -> dict[str, Any] | None:
 
 def trim_stationary_trip_points(trip: dict[str, Any], points: list[dict[str, Any]]) -> dict[str, Any]:
     config_value = trip.get("stationary_trim")
-    if config_value is None and trip.get("source") != MOBILE_SOURCE:
+    if config_value is None and not should_apply_default_stationary_trim(trip, points):
         return stationary_trim_result([points], [], points)
     config = normalize_stationary_trim_config(config_value)
     ordered = sorted(
@@ -1342,6 +1342,14 @@ def trim_stationary_trip_points(trip: dict[str, Any], points: list[dict[str, Any
     if not segments and len(ordered) >= 2:
         segments = [[ordered[0], ordered[-1]]]
     return stationary_trim_result(segments, periods, ordered)
+
+
+def should_apply_default_stationary_trim(trip: dict[str, Any], points: list[dict[str, Any]]) -> bool:
+    if trip.get("stationary_trim") is not None:
+        return True
+    if trip.get("source") == "arcgis" or trip.get("list_suppressed"):
+        return False
+    return len(points) >= 2
 
 
 def stationary_trim_result(
@@ -1513,7 +1521,7 @@ def summarize_trip(trip: dict[str, Any] | None) -> dict[str, Any] | None:
         "trimmed_point_count": len(points),
         "stationary_trimmed": bool(trim["periods"]),
         "stationary_trim": normalize_stationary_trim_config(trip.get("stationary_trim"))
-        if trip.get("source") == MOBILE_SOURCE or trip.get("stationary_trim") is not None
+        if should_apply_default_stationary_trim(trip, raw_points)
         else {"enabled": False},
         "stationary_periods": trim["periods"],
         "segments": [
