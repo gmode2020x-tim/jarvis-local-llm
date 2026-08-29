@@ -1090,6 +1090,15 @@ def normalize_mobile_point(value: Any, source_trip_id: str) -> dict[str, Any]:
         "acceleration_peak_ms2": clean_mobile_number(
             value.get("accelerationPeakMs2"), "point.accelerationPeakMs2", 0, 200
         ),
+        "acceleration_peak_x_ms2": clean_mobile_number(
+            value.get("accelerationPeakXMs2"), "point.accelerationPeakXMs2", -200, 200
+        ),
+        "acceleration_peak_y_ms2": clean_mobile_number(
+            value.get("accelerationPeakYMs2"), "point.accelerationPeakYMs2", -200, 200
+        ),
+        "acceleration_peak_z_ms2": clean_mobile_number(
+            value.get("accelerationPeakZMs2"), "point.accelerationPeakZMs2", -200, 200
+        ),
         "gyroscope_peak_rads": clean_mobile_number(
             value.get("gyroscopePeakRadS"), "point.gyroscopePeakRadS", 0, 100
         ),

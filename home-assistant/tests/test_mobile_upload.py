@@ -116,6 +116,9 @@ def payload(status: str = "active") -> dict:
                 "pressureHpa": 1002.4,
                 "accelerationRmsMs2": 0.8,
                 "accelerationPeakMs2": 3.2,
+                "accelerationPeakXMs2": 1.1,
+                "accelerationPeakYMs2": -2.2,
+                "accelerationPeakZMs2": 2.0,
                 "gyroscopePeakRadS": 0.4,
                 "batteryPercent": 90,
                 "networkType": "offline",
@@ -190,6 +193,9 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("gmode_android", trip["source"])
         self.assertEqual("off_road", trip["trip_type"])
         self.assertEqual(1002.4, trip["points"][0]["pressure_hpa"])
+        self.assertEqual(1.1, trip["points"][0]["acceleration_peak_x_ms2"])
+        self.assertEqual(-2.2, trip["points"][0]["acceleration_peak_y_ms2"])
+        self.assertEqual(2.0, trip["points"][0]["acceleration_peak_z_ms2"])
 
     async def test_completed_trip_cannot_be_downgraded_by_late_retry(self) -> None:
         completed = await self.recorder.import_mobile_trip(payload("complete"))
