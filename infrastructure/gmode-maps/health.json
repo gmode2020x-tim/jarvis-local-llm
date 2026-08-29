@@ -1,0 +1,6 @@
+{
+  "status": "ok",
+  "service": "gmode-maps",
+  "map": "/maps/ontario.pmtiles",
+  "routing": "http://OSRM_VM_IP:5000"
+}

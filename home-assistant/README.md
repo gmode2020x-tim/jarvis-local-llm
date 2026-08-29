@@ -32,6 +32,25 @@ Extended point fields include:
 
 Existing map consumers continue to use `lat`, `lon`, `altitude`, `accuracy`, `vertical_accuracy`, `speed`, and `at`.
 
+## Local maps and routing
+
+The live Maps dashboard uses services hosted together on the existing OSRM VM:
+
+- OSRM routing: `http://OSRM_VM_IP:5000`
+- Ontario vector basemap: `http://OSRM_VM_IP:8080/maps/ontario.pmtiles`
+- Map health: `http://OSRM_VM_IP:8080/health.json`
+
+The basemap is a bounded Protomaps PMTiles archive served by Nginx with HTTP Range and CORS support. The Home Assistant Leaflet pages use the versioned `local-basemap.js` helper and vendored Protomaps Leaflet adapter, so no tile API key or public raster tile service is required.
+
+Deploy the browser assets and convert the active map pages after backing them up:
+
+```powershell
+.\scripts\switch_gmode_maps_to_local_pmtiles.ps1 -MapServiceUrl http://OSRM_VM_IP:8080/maps/ontario.pmtiles
+Copy-Item .\home-assistant\maps_dashboard.yaml Z:\maps_dashboard.yaml -Force
+```
+
+The LAN endpoints are not exposed to the internet. A future native GMODE map view can connect directly while on home Wi-Fi. Reliable use away from home requires either VPN access or an explicitly downloaded offline PMTiles archive; OSRM route calculation remains a network request unless the routing graph is also packaged on the phone.
+
 Set `automatic_tracking: false` only when the Android app should be the sole trip recorder. Leave it `true` while comparing Home Assistant's tracker route against the phone app; records are labelled by source so the two paths remain distinguishable. The snapshot and map APIs remain available in either mode, and authenticated Android uploads continue normally. Historical trips remain in the state file.
 
 Private entity IDs, LAN addresses, and route coordinates are configuration only; the component contains no household-specific defaults. Start from [`configuration.example.yaml`](configuration.example.yaml). `route_places` controls friendly route grouping, and `off_road_reference_place` optionally supplies a local area used by slow-trip auto-classification.

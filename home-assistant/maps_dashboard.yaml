@@ -7,7 +7,7 @@ views:
     cards:
       - type: iframe
         title: Live Map
-        url: /local/gmode_trip_recorder/locations_20260717.html?v=20260722-focus-ingersoll
+        url: /local/gmode_trip_recorder/locations_20260717.html?v=20260829-local-pmtiles
         aspect_ratio: "16:12"
   - title: Trips
     path: trips
@@ -16,7 +16,7 @@ views:
     cards:
       - type: iframe
         title: Trips
-        url: /local/gmode_trip_recorder/trips_ha_api_20260717.html?v=20260827-source-comparison
+        url: /local/gmode_trip_recorder/trips_ha_api_20260717.html?v=20260829-local-pmtiles
         aspect_ratio: "16:13"
   - title: Routes
     path: history
