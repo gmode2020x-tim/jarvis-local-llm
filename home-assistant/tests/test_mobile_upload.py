@@ -104,6 +104,7 @@ def payload(status: str = "active") -> dict:
             "endAt": "2026-08-21T12:00:05Z" if status == "complete" else None,
             "stationaryTrim": {
                 "enabled": True,
+                "autoPauseEnabled": True,
                 "radiusMeters": 150,
                 "pauseMinutes": 3,
                 "splitMinutes": 15,
@@ -204,6 +205,22 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(-2.2, trip["points"][0]["acceleration_peak_y_ms2"])
         self.assertEqual(2.0, trip["points"][0]["acceleration_peak_z_ms2"])
         self.assertEqual(150, trip["stationary_trim"]["radius_meters"])
+        self.assertTrue(trip["stationary_trim"]["auto_pause_enabled"])
+
+    async def test_normalized_stationary_config_keeps_saved_snake_case_values(self) -> None:
+        normalized = component.normalize_stationary_trim_config({
+            "enabled": True,
+            "auto_pause_enabled": False,
+            "radius_meters": 150,
+            "pause_minutes": 3,
+            "split_minutes": 15,
+            "speed_kmh": 1.0,
+        })
+
+        self.assertFalse(normalized["auto_pause_enabled"])
+        self.assertEqual(150, normalized["radius_meters"])
+        self.assertEqual(1.0, normalized["speed_kmh"])
+        self.assertEqual(normalized, component.normalize_stationary_trim_config(normalized))
 
     async def test_stationary_dwell_is_trimmed_into_route_legs_without_deleting_raw_points(self) -> None:
         def point(minute: int, lat: float, speed: float) -> dict:
@@ -338,7 +355,11 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
                 "notice": "Comparison logging enabled",
                 "latest_version": "2.1.0",
                 "download_url": "https://example.invalid/gmode.apk",
-                "settings": {"locationIntervalSeconds": 3, "minimumDistanceMeters": 2},
+                "settings": {
+                    "locationIntervalSeconds": 3,
+                    "minimumDistanceMeters": 2,
+                    "stationaryAutoPauseEnabled": True,
+                },
                 "command_action": "rearm",
             }
         )
@@ -349,6 +370,7 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         acknowledged = await self.recorder.import_mobile_diagnostics(diagnostics_payload(command_id))
         self.assertNotIn("command", acknowledged["control"])
         self.assertEqual(3, acknowledged["control"]["settings"]["locationIntervalSeconds"])
+        self.assertTrue(acknowledged["control"]["settings"]["stationaryAutoPauseEnabled"])
 
 
 if __name__ == "__main__":

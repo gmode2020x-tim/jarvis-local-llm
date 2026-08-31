@@ -962,7 +962,7 @@ def normalize_mobile_snapshot(value: Any) -> dict[str, Any]:
     boolean_fields = (
         "autoEnabled", "fineLocationGranted", "backgroundLocationGranted",
         "notificationsGranted", "batteryUnrestricted", "locationEnabled",
-        "stationaryTrimEnabled", "stopManualTripsAtHome",
+        "stationaryTrimEnabled", "stationaryAutoPauseEnabled", "stopManualTripsAtHome",
     )
     snapshot = {key: clean_mobile_text(source.get(key)) for key in text_fields}
     for key in integer_fields:
@@ -980,24 +980,31 @@ def normalize_mobile_snapshot(value: Any) -> dict[str, Any]:
 
 def normalize_stationary_trim_config(value: Any) -> dict[str, Any]:
     source = value if isinstance(value, dict) else {}
+
+    def setting(camel_case: str, snake_case: str, default: Any) -> Any:
+        if camel_case in source:
+            return source[camel_case]
+        return source.get(snake_case, default)
+
     try:
-        radius = min(500, max(25, int(source.get("radiusMeters", 150))))
+        radius = min(500, max(25, int(setting("radiusMeters", "radius_meters", 150))))
     except (TypeError, ValueError):
         radius = 150
     try:
-        pause = min(30, max(1, int(source.get("pauseMinutes", 3))))
+        pause = min(30, max(1, int(setting("pauseMinutes", "pause_minutes", 3))))
     except (TypeError, ValueError):
         pause = 3
     try:
-        split = min(120, max(5, int(source.get("splitMinutes", 15))))
+        split = min(120, max(5, int(setting("splitMinutes", "split_minutes", 15))))
     except (TypeError, ValueError):
         split = 15
     try:
-        speed = min(20.0, max(1.0, float(source.get("speedKmh", 5.4))))
+        speed = min(20.0, max(1.0, float(setting("speedKmh", "speed_kmh", 5.4))))
     except (TypeError, ValueError):
         speed = 5.4
     return {
-        "enabled": bool(source.get("enabled", True)),
+        "enabled": bool(setting("enabled", "enabled", True)),
+        "auto_pause_enabled": bool(setting("autoPauseEnabled", "auto_pause_enabled", True)),
         "radius_meters": radius,
         "pause_minutes": pause,
         "split_minutes": max(pause, split),
@@ -1048,7 +1055,7 @@ def normalize_mobile_control(value: Any) -> dict[str, Any]:
     trip_type = clean_mobile_text(settings_source.get("tripType"), 16).lower()
     if trip_type in TRIP_TYPE_LABELS:
         settings["tripType"] = trip_type
-    for key in ("stationaryTrimEnabled", "stopManualTripsAtHome"):
+    for key in ("stationaryTrimEnabled", "stationaryAutoPauseEnabled", "stopManualTripsAtHome"):
         if key in settings_source:
             settings[key] = bool(settings_source.get(key))
     if settings_source.get("stationarySpeedKmh") is not None:
