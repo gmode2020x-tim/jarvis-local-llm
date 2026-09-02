@@ -1258,7 +1258,7 @@ def trim_stationary_trip_points(trip: dict[str, Any], points: list[dict[str, Any
     radius = float(config["radius_meters"])
     pause_seconds = float(config["pause_minutes"]) * 60
     speed_threshold_mps = float(config["speed_kmh"]) / 3.6
-    periods: list[dict[str, Any]] = []
+    periods = find_sparse_stationary_periods(ordered, radius, pause_seconds, speed_threshold_mps)
     start = 0
     while start < len(ordered) - 1:
         end = start
@@ -1303,24 +1303,12 @@ def trim_stationary_trip_points(trip: dict[str, Any], points: list[dict[str, Any
                 "end_at": ordered[expanded_end].get("at"),
                 "duration_minutes": round(period_seconds / 60, 1),
             }
-            if periods and next_period["start_index"] <= periods[-1]["end_index"]:
-                merged_end = max(periods[-1]["end_index"], next_period["end_index"])
-                periods[-1]["end_index"] = merged_end
-                periods[-1]["end_at"] = ordered[merged_end].get("at")
-                periods[-1]["duration_minutes"] = round(
-                    (
-                        parse_date(ordered[merged_end].get("at"))
-                        - parse_date(ordered[periods[-1]["start_index"]].get("at"))
-                    ).total_seconds()
-                    / 60,
-                    1,
-                )
-            else:
-                periods.append(next_period)
+            periods.append(next_period)
             start = expanded_end + 1
         else:
             start += 1
 
+    periods = merge_stationary_periods(periods, ordered)
     if not periods:
         return stationary_trim_result([ordered], [], ordered)
 
@@ -1349,6 +1337,68 @@ def trim_stationary_trip_points(trip: dict[str, Any], points: list[dict[str, Any
     if not segments and len(ordered) >= 2:
         segments = [[ordered[0], ordered[-1]]]
     return stationary_trim_result(segments, periods, ordered)
+
+
+def find_sparse_stationary_periods(
+    points: list[dict[str, Any]],
+    radius_meters: float,
+    pause_seconds: float,
+    speed_threshold_mps: float,
+) -> list[dict[str, Any]]:
+    """Find pauses represented by a long gap between two stationary fixes."""
+    periods: list[dict[str, Any]] = []
+    for end_index in range(1, len(points)):
+        start_index = end_index - 1
+        start_point = points[start_index]
+        end_point = points[end_index]
+        elapsed_seconds = max(
+            0.0,
+            (parse_date(end_point.get("at")) - parse_date(start_point.get("at"))).total_seconds(),
+        )
+        if elapsed_seconds < pause_seconds:
+            continue
+        if not is_stationary_speed(start_point, speed_threshold_mps) or not is_stationary_speed(
+            end_point, speed_threshold_mps
+        ):
+            continue
+        if haversine_meters(
+            start_point["lat"], start_point["lon"], end_point["lat"], end_point["lon"]
+        ) > radius_meters:
+            continue
+        periods.append(
+            {
+                "start_index": start_index,
+                "end_index": end_index,
+                "start_at": start_point.get("at"),
+                "end_at": end_point.get("at"),
+                "duration_minutes": round(elapsed_seconds / 60, 1),
+            }
+        )
+    return merge_stationary_periods(periods, points)
+
+
+def merge_stationary_periods(
+    periods: list[dict[str, Any]], points: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return stationary periods in route order with overlaps combined."""
+    merged: list[dict[str, Any]] = []
+    for period in sorted(periods, key=lambda item: (item["start_index"], item["end_index"])):
+        if merged and period["start_index"] <= merged[-1]["end_index"]:
+            merged[-1]["end_index"] = max(merged[-1]["end_index"], period["end_index"])
+        else:
+            merged.append(dict(period))
+        current = merged[-1]
+        current["start_at"] = points[current["start_index"]].get("at")
+        current["end_at"] = points[current["end_index"]].get("at")
+        current["duration_minutes"] = round(
+            (
+                parse_date(current["end_at"])
+                - parse_date(current["start_at"])
+            ).total_seconds()
+            / 60,
+            1,
+        )
+    return merged
 
 
 def should_apply_default_stationary_trim(trip: dict[str, Any], points: list[dict[str, Any]]) -> bool:

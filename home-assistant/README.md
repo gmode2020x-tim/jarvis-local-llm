@@ -18,6 +18,8 @@ Authorization: Bearer HOME_ASSISTANT_LONG_LIVED_ACCESS_TOKEN
 
 Every heartbeat updates `sensor.gmode_mobile_status` and `sensor.gmode_mobile_log`; the latter retains at most 100 deduplicated phone events. `sensor.gmode_mobile_control` exposes the current revisioned HA-to-phone payload. The `gmode_trip_recorder.set_mobile_control` action can publish a notice, app update URL/hash, bounded recording settings, or the safe `sync`/`rearm` commands. `gmode_trip_recorder.clear_mobile_logs` clears retained events without deleting the latest heartbeat. The app acknowledges commands by ID. It never silently installs an APK and does not accept arbitrary executable commands.
 
+Integration 1.3.1 recognizes an automatic mobile pause when it is represented by a long gap between two nearby stationary GPS fixes. This keeps stopped time out of moving duration and average speed even though the phone intentionally records no intermediate points while paused. Raw points remain unchanged.
+
 Extended point fields include:
 
 - `pressure_hpa`

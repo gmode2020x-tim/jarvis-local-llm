@@ -285,6 +285,47 @@ class MobileUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(15.0, summary["stationary_minutes"])
         self.assertLess(summary["duration_minutes"], summary["raw_duration_minutes"])
 
+    async def test_sparse_auto_pause_gap_is_trimmed_before_dense_departure_points(self) -> None:
+        points = [
+            {"at": "2026-09-01T10:42:00+00:00", "lat": 43.4050, "lon": -80.3760, "speed": 4.0},
+            {"at": "2026-09-01T10:43:00+00:00", "lat": 43.4054, "lon": -80.3765, "speed": 0.1},
+            {"at": "2026-09-01T19:35:00+00:00", "lat": 43.4054, "lon": -80.3765, "speed": 0.0},
+        ]
+        points.extend(
+            {
+                "at": f"2026-09-01T19:35:{second:02d}+00:00",
+                "lat": 43.4054 + second / 1_000_000,
+                "lon": -80.3765,
+                "speed": 4.0,
+            }
+            for second in range(3, 60, 3)
+        )
+        points.append(
+            {"at": "2026-09-01T19:36:00+00:00", "lat": 43.4080, "lon": -80.3765, "speed": 12.0}
+        )
+        trip = {
+            "id": "mobile-sparse-pause-test",
+            "source": component.MOBILE_SOURCE,
+            "status": "complete",
+            "start_at": points[0]["at"],
+            "end_at": points[-1]["at"],
+            "stationary_trim": component.normalize_stationary_trim_config({
+                "radius_meters": 150,
+                "pause_minutes": 3,
+                "split_minutes": 15,
+                "speed_kmh": 1.0,
+            }),
+            "points": points,
+        }
+
+        summary = component.summarize_trip(trip)
+
+        self.assertTrue(summary["stationary_trimmed"])
+        self.assertEqual(1, len(summary["stationary_periods"]))
+        self.assertEqual(532.0, summary["stationary_minutes"])
+        self.assertEqual(2, len(summary["segments"]))
+        self.assertEqual(len(points), len(trip["points"]))
+
     async def test_catalog_geometry_is_not_stationary_trimmed_by_default(self) -> None:
         points = [
             {"at": "2026-08-29T14:00:00+00:00", "lat": 43.0, "lon": -80.0},
